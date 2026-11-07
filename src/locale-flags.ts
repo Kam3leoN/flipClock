@@ -69,14 +69,15 @@ function localeFlagHosts(): HTMLElement[] {
     if (!seen.has(el)) seen.add(el);
   };
   document.querySelectorAll<HTMLElement>('[data-locale-flag]').forEach(add);
-  /* Menu items may live under k3-select light DOM */
-  document.querySelectorAll('k3-select').forEach((sel) => {
-    sel.querySelectorAll<HTMLElement>('[data-locale-flag]').forEach(add);
+  /* Items are adopted into k3-split-button → k3-menu shadow */
+  document.querySelectorAll('k3-split-button').forEach((split) => {
+    const menu = split.shadowRoot?.querySelector('k3-menu');
+    menu?.querySelectorAll<HTMLElement>('[data-locale-flag]').forEach(add);
   });
   return [...seen];
 }
 
-export function mountLocaleFlags(_active: AppLocale): void {
+export function mountLocaleFlags(active: AppLocale): void {
   for (const el of localeFlagHosts()) {
     const code = el.getAttribute('data-locale-flag');
     if (!code || !isAppLocale(code)) continue;
@@ -84,4 +85,5 @@ export function mountLocaleFlags(_active: AppLocale): void {
     const item = el.closest('k3-menu-item') as { syncSlots?: () => void } | null;
     item?.syncSlots?.();
   }
+  setLocaleFlagEl(document.getElementById('locale-menu-flag'), active);
 }

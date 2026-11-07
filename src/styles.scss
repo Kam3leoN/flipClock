@@ -627,17 +627,16 @@ body.settings-open k3-fab-menu.settings-trigger:not([data-k3-overlay-concealed])
   letter-spacing: 0.04em;
 }
 
-.locale-select {
+.locale-split {
   position: fixed !important;
   top: max(1rem, env(safe-area-inset-top, 0px));
   inset-inline-end: max(1rem, env(safe-area-inset-right, 0px));
   z-index: 120;
-  width: min(12.5rem, calc(100vw - 2rem));
-  --k3-field-outlined-notch-bg: var(--md-sys-color-background, #0f0f0f);
 }
 
 /* Long locale list — keep panel within the viewport */
-#locale-select::part(menu) {
+#locale-menu::part(menu) {
+  --k3-menu-max-w: 14rem;
   max-height: min(22rem, 70vh);
 }
 
