@@ -2,3 +2,7 @@
 .DS_Store
 Thumbs.db
 node_modules/
+dist/
+*.tmp.css
+_raw.*
+index.legacy.html

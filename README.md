@@ -1,27 +1,30 @@
 # Fliqlo (web)
 
-Reproduction pixel-fidèle de l’écran Fliqlo®, extraite du moteur HTML du screensaver Windows, adaptée pour un déploiement Vercel / navigateur.
+Flip-clock page adapted from the Fliqlo® screensaver engine for the browser / Vercel.
 
-## Lancer en local
+## Stack
 
-Ouvre `index.html` dans un navigateur, ou :
+- `index.html` — markup
+- `src/styles.scss` — styles (original look, unchanged values)
+- `src/main.ts` — clock logic, flips, settings
+- Vite build → `dist/`
+
+## Local
 
 ```bash
-npx serve .
+npm install
+npm run dev
 ```
-
-## Déployer sur Vercel
 
 ```bash
-npx vercel
+npm run build
+npm run preview
 ```
 
-Ou glisse-dépose le dossier `fliqlo-web` dans [vercel.com/new](https://vercel.com/new).
+## Settings
 
-## Réglages
-
-Bouge la souris pour afficher la barre en bas : format 12/24 h, flaps, échelle, luminosité.
+Move the mouse to show the bottom bar: 12/24h, flaps, scale, brightness.
 
 ## Note
 
-Fliqlo® est © 9031 / Yuji Adachi. Cette page est une adaptation personnelle du rendu pour usage web ; ne redistribue pas le binaire `.saver` / `.scr` d’origine.
+Fliqlo® is © 9031 / Yuji Adachi. Personal web adaptation; do not redistribute the original `.saver` / `.scr` binaries.
