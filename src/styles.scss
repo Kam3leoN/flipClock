@@ -25,7 +25,7 @@
   --md-sys-spacing-space100: 8px;
   --md-sys-spacing-space150: 12px;
   --md-sys-spacing-space200: 16px;
-  --flip-digit: color-mix(in srgb, var(--md-sys-color-on-surface) 71.1%, transparent);
+  --flip-digit: color-mix(in srgb, var(--md-sys-color-on-surface) 72%, var(--md-sys-color-surface-container-high));
   --flip-face-top: var(--md-sys-color-surface-container-high);
   --flip-face-bottom: var(--md-sys-color-surface-container);
   --flip-face-inner-top: var(--md-sys-color-surface-container-highest);
@@ -168,60 +168,33 @@ a {
 .settings #main-content-area {
   transition: filter 0.2s linear;
 }
+/*
+ * Lighting fades — opacity only.
+ * filter:brightness() on 3D flaps flashes white digits in Chromium.
+ */
 @keyframes fadeIn {
   0% {
-    -webkit-filter: brightness(10%);
-    filter: brightness(10%);
+    opacity: 0.2;
   }
   100% {
-    -webkit-filter: brightness(100%);
-    filter: brightness(100%);
-  }
-}
-@keyframes fadeInSCR {
-  0% {
-    background-color: rgba(0, 0, 0, 0.9);
-  }
-  100% {
-    background-color: rgba(0, 0, 0, 0);
+    opacity: 1;
   }
 }
 @keyframes fadeOut1 {
   0%,
   66% {
-    -webkit-filter: brightness(100%);
-    filter: brightness(100%);
+    opacity: 1;
   }
   100% {
-    -webkit-filter: brightness(50%);
-    filter: brightness(50%);
-  }
-}
-@keyframes fadeOut1SCR {
-  0%,
-  66% {
-    background-color: rgba(0, 0, 0, 0);
-  }
-  100% {
-    background-color: rgba(0, 0, 0, 0.5);
+    opacity: 0.55;
   }
 }
 @keyframes fadeOut2 {
   0% {
-    -webkit-filter: brightness(50%);
-    filter: brightness(50%);
+    opacity: 0.55;
   }
   100% {
-    -webkit-filter: brightness(10%);
-    filter: brightness(10%);
-  }
-}
-@keyframes fadeOut2SCR {
-  0% {
-    background-color: rgba(0, 0, 0, 0.5);
-  }
-  100% {
-    background-color: rgba(0, 0, 0, 0.9);
+    opacity: 0.15;
   }
 }
 /* Transform-only — filters on 3D flips flash white digits in Chromium */
@@ -249,19 +222,19 @@ a {
     transform: rotateX(0);
   }
 }
-/* Hit the lower flap: settle with a short Y overshoot (no negative rotateX) */
+/* Hit the lower flap — scale squash (no translate that gaps the digit) */
 @keyframes anmBottomBounce {
   0% {
-    transform: rotateX(90deg) translateY(0);
+    transform: rotateX(90deg) scaleY(1);
   }
-  58% {
-    transform: rotateX(0) translateY(12px);
+  62% {
+    transform: rotateX(0) scaleY(0.92);
   }
-  76% {
-    transform: rotateX(0) translateY(-5px);
+  78% {
+    transform: rotateX(0) scaleY(1.04);
   }
   100% {
-    transform: rotateX(0) translateY(0);
+    transform: rotateX(0) scaleY(1);
   }
 }
 .flips {
@@ -322,7 +295,7 @@ a {
   display: block;
 }
 .willchange .flip {
-  will-change: animation;
+  will-change: transform;
 }
 .fade .flip {
   transition:
@@ -439,6 +412,11 @@ html[data-motion='standard'] .flip.bottom.transform {
   z-index: 2;
   font-size: 600px;
   line-height: 758px;
+  color: var(--flip-digit);
+  /* Avoid subpixel AA flashes during 3D composite */
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+  transform: translateZ(0);
 }
 .flip.hur.one span {
   text-indent: -0.025em;

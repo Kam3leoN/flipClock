@@ -73,9 +73,10 @@ const AUTO_LIGHT_END = 18;
 function flipDigitVar(isDark: boolean): void {
   const root = document.documentElement;
   if (isDark) {
+    /* Opaque mix — alpha digits flash white under 3D composite in Chromium */
     root.style.setProperty(
       '--flip-digit',
-      'color-mix(in srgb, var(--md-sys-color-on-surface) 71.1%, transparent)',
+      'color-mix(in srgb, var(--md-sys-color-on-surface) 72%, var(--md-sys-color-surface-container-high))',
     );
     root.style.setProperty(
       '--flip-face-top',

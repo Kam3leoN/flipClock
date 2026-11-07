@@ -1051,9 +1051,16 @@ function bindScaleAndBrightness(): void {
       | (HTMLElement & { value?: number })
       | null;
     if (slider && slider.value !== value) slider.value = value;
-    requireEl('main-content-area').style.filter = `brightness(${value}%)`;
+    /* filter:brightness(100%) still creates a layer that flashes 3D flips */
+    const area = requireEl('main-content-area');
     const dateEl = document.getElementById('clock-date');
-    if (dateEl) dateEl.style.filter = `brightness(${value}%)`;
+    if (value >= BRIGHTNESS_MAX) {
+      area.style.removeProperty('filter');
+      dateEl?.style.removeProperty('filter');
+    } else {
+      area.style.filter = `brightness(${value}%)`;
+      if (dateEl) dateEl.style.filter = `brightness(${value}%)`;
+    }
   }) as EventListener);
 }
 
