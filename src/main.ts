@@ -364,9 +364,12 @@ function refreshUiCopy(): void {
   const fabDocs = document.getElementById('fab-docs');
   if (fabDocs) fabDocs.textContent = t('menu.docs');
 
-  const localeBtn = document.getElementById('locale-menu');
-  localeBtn?.setAttribute('label', t('lang.label'));
-  localeBtn?.setAttribute('aria-label', t('a11y.language'));
+  const localeSel = document.getElementById('locale-select');
+  localeSel?.setAttribute('label', t('lang.label'));
+  localeSel?.setAttribute('aria-label', t('a11y.language'));
+  if (localeSel && 'value' in localeSel) {
+    (localeSel as HTMLElement & { value: string }).value = getLocale();
+  }
 
   const themeSeg = document.getElementById('theme-seg');
   if (themeSeg) {
@@ -628,7 +631,7 @@ function mountChromeUi(): void {
   ).join('');
   const m2Current = findM2Palette(seedColor) ?? 'custom';
   const localeItems = LOCALES.map(
-    (code) => `<k3-menu-item slot="menu" data-locale="${code}" value="${code}">
+    (code) => `<k3-menu-item data-locale="${code}" value="${code}">
         <span class="flag-icon flag-icon--1x1" slot="icon" data-locale-flag="${code}" aria-hidden="true"></span>
         ${LOCALE_NATIVE[code]}
       </k3-menu-item>`,
@@ -636,19 +639,18 @@ function mountChromeUi(): void {
 
   document.body.insertAdjacentHTML(
     'beforeend',
-    `<k3-split-button
-      id="locale-menu"
-      class="locale-split"
-      size="sm"
-      variant="tonal"
+    `<k3-select
+      id="locale-select"
+      class="locale-select"
       label="${t('lang.label')}"
       aria-label="${t('a11y.language')}"
       data-i18n-label="lang.label"
       data-i18n-aria="a11y.language"
+      variant="outlined"
+      value="${getLocale()}"
     >
-      <span id="locale-menu-flag" class="flag-icon flag-icon--1x1" slot="icon" aria-hidden="true"></span>
       ${localeItems}
-    </k3-split-button>
+    </k3-select>
 
     <k3-fab-menu id="app-fab-menu" class="settings-trigger" fixed size="default" variant="primary" placement="bottom-end" aria-label="${t('menu.open')}" data-i18n-aria="menu.open">
       <span slot="icon" class="ms notranslate" translate="no" lang="zxx" data-k3-icon="menu" aria-hidden="true"></span>
@@ -810,7 +812,7 @@ function mountChromeUi(): void {
     });
   };
 
-  requireEl('locale-menu').addEventListener('k3-select', ((event: CustomEvent<{ value?: string }>) => {
+  requireEl('locale-select').addEventListener('k3-change', ((event: CustomEvent<SelectChangeDetail>) => {
     const v = event.detail?.value;
     if (v && isAppLocale(v)) changeLocale(v);
   }) as EventListener);

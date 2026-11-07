@@ -51,7 +51,6 @@ const SETTINGS_COMPONENTS = [
   'k3-sheet',
   'k3-fab-menu',
   'k3-fab-menu-item',
-  'k3-split-button',
   'k3-button',
   'k3-slider',
   'k3-switch',
