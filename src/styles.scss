@@ -169,72 +169,38 @@ a {
   transition: filter 0.2s linear;
 }
 /*
- * Lighting fades — opacity only.
- * filter:brightness() on 3D flaps flashes white digits in Chromium.
+ * No opacity/filter on flipping faces — both flash white digits in Chromium
+ * when combined with preserve-3d / rotateX.
  */
-@keyframes fadeIn {
-  0% {
-    opacity: 0.2;
-  }
-  100% {
-    opacity: 1;
-  }
-}
-@keyframes fadeOut1 {
-  0%,
-  66% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0.55;
-  }
-}
-@keyframes fadeOut2 {
-  0% {
-    opacity: 0.55;
-  }
-  100% {
-    opacity: 0.15;
-  }
-}
-/* Transform-only — filters on 3D flips flash white digits in Chromium */
 @keyframes anmTop {
   0% {
-    transform: rotateX(0);
+    transform: rotateX(0) translateZ(0);
   }
   100% {
-    transform: rotateX(-90deg);
-  }
-}
-@keyframes anmTopSCR {
-  0% {
-    background-color: rgba(0, 0, 0, 0);
-  }
-  100% {
-    background-color: rgba(0, 0, 0, 0.6);
+    transform: rotateX(-90deg) translateZ(0);
   }
 }
 @keyframes anmBottom {
   0% {
-    transform: rotateX(90deg);
+    transform: rotateX(90deg) translateZ(0);
   }
   100% {
-    transform: rotateX(0);
+    transform: rotateX(0) translateZ(0);
   }
 }
-/* Hit the lower flap — scale squash (no translate that gaps the digit) */
-@keyframes anmBottomBounce {
+/* Rebound on the static lower flap (behind), after the falling face lands */
+@keyframes flapHit {
   0% {
-    transform: rotateX(90deg) scaleY(1);
+    transform: scaleY(1);
   }
-  62% {
-    transform: rotateX(0) scaleY(0.92);
+  40% {
+    transform: scaleY(0.94);
   }
-  78% {
-    transform: rotateX(0) scaleY(1.04);
+  70% {
+    transform: scaleY(1.03);
   }
   100% {
-    transform: rotateX(0) scaleY(1);
+    transform: scaleY(1);
   }
 }
 .flips {
@@ -280,13 +246,15 @@ a {
   box-sizing: content-box;
   color: var(--flip-digit);
   z-index: 0;
-  transform: rotateX(0);
+  transform: rotateX(0) translateZ(0);
   animation-duration: 0.165s;
   animation-fill-mode: forwards;
   transition: unset;
   background-color: var(--flip-gap);
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
+  /* Keep GPU layer warm — avoids Chrome white flash on animation start */
+  -webkit-transform: rotateX(0) translateZ(0);
 }
 .flip.clone {
   display: none;
@@ -326,8 +294,7 @@ a {
   border-top: solid 1px var(--flip-seam-bottom);
   top: 303px;
   border-radius: 4px 4px 50px 50px;
-  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
-  animation-duration: 0.3s;
+  animation-timing-function: ease-out;
 }
 .dark .flip.bottom {
   border-top-color: var(--flip-gap);
@@ -337,15 +304,8 @@ a {
 }
 .flip.bottom.clone {
   transform-origin: 50% 0;
-}
-.flip.fadein {
-  animation-name: fadeIn;
-}
-.flip.fadeout1 {
-  animation-name: fadeOut1;
-}
-.flip.fadeout2 {
-  animation-name: fadeOut2;
+  /* Park edge-on before act — avoids 1-frame flash at rotateX(0) */
+  transform: rotateX(90deg) translateZ(0);
 }
 .flip.top.transform {
   display: block;
@@ -353,21 +313,32 @@ a {
 }
 .flip.bottom.transform {
   display: block;
-  animation-name: anmBottomBounce;
-}
-html[data-motion='standard'] .flip.bottom.transform {
   animation-name: anmBottom;
-  animation-duration: 0.165s;
-  animation-timing-function: ease-out;
+}
+/* Expressive: slightly longer decelerate into the lower flap */
+html[data-motion='expressive'] .flip.bottom.transform {
+  animation-duration: 0.28s;
+  animation-timing-function: cubic-bezier(0.2, 0.9, 0.1, 1);
+}
+.flip.bottom.hit {
+  animation-name: flapHit;
+  animation-duration: 0.28s;
+  animation-timing-function: cubic-bezier(0.34, 1.4, 0.64, 1);
+  animation-fill-mode: none;
+  transform-origin: 50% 0;
 }
 .stop .flip.bottom.transform,
-.stop .flip.top.transform {
+.stop .flip.top.transform,
+.stop .flip.bottom.hit {
   animation: none;
 }
 @media (prefers-reduced-motion: reduce) {
-  .flip.bottom.transform {
-    animation-name: anmBottom;
+  .flip.bottom.transform,
+  .flip.top.transform {
     animation-duration: 0.01ms;
+  }
+  .flip.bottom.hit {
+    animation: none;
   }
 }
 .flip::before {

@@ -1101,7 +1101,7 @@ function bindClock(): void {
     if (displayedHour == null || displayedMinute == null) {
       requireEl('main-content-area').classList.add('stop');
       document.querySelectorAll('.flip').forEach((el) => {
-        el.classList.remove('transform', 'fadein', 'fadeout1', 'fadeout2');
+        el.classList.remove('transform', 'hit', 'fadein', 'fadeout1', 'fadeout2');
       });
 
       document.querySelectorAll('.flip.hur').forEach((el) => {
@@ -1170,12 +1170,10 @@ function bindClock(): void {
       const topOrg = requireEl('hur-top-org');
       applyHourClasses(topOrg, displayedTimeFormat, displayedHour!);
       setFlipText(topOrg, formatHour(displayedTimeFormat, displayedHour!));
-      topOrg.classList.add('fadein');
 
       const bottomClone = requireEl('hur-bottom-clone');
       applyHourClasses(bottomClone, displayedTimeFormat, displayedHour!);
       setFlipText(bottomClone, formatHour(displayedTimeFormat, displayedHour!));
-      requireEl('hur-bottom-org').classList.add('fadeout1');
     }
 
     if (m) {
@@ -1184,12 +1182,10 @@ function bindClock(): void {
       const topOrg = requireEl('min-top-org');
       applyMinuteClasses(topOrg, displayedMinute!);
       setFlipText(topOrg, displayedMinute!);
-      topOrg.classList.add('fadein');
 
       const bottomClone = requireEl('min-bottom-clone');
       applyMinuteClasses(bottomClone, displayedMinute!);
       setFlipText(bottomClone, displayedMinute!);
-      requireEl('min-bottom-org').classList.add('fadeout1');
     }
   }) as EventListener);
 
@@ -1216,12 +1212,6 @@ function bindClock(): void {
     });
   });
 
-  document.querySelectorAll('#hur-top-org, #min-top-org').forEach((node) => {
-    node.addEventListener('animationend', function onTopOrgEnd(this: HTMLElement) {
-      this.classList.add('fadein');
-    });
-  });
-
   document.querySelectorAll('#hur-bottom-clone, #min-bottom-clone').forEach((node) => {
     node.addEventListener('animationend', function onBottomCloneEnd(this: HTMLElement) {
       const hm = this.dataset.hm!;
@@ -1240,17 +1230,17 @@ function bindClock(): void {
           document.body.classList.remove('willchange');
         }
       }
+
+      /* Rebound on the flap behind — scale only, no opacity/filter */
+      bottomOrg.classList.remove('hit');
+      void bottomOrg.offsetWidth;
+      bottomOrg.classList.add('hit');
     });
   });
 
   document.querySelectorAll('#hur-bottom-org, #min-bottom-org').forEach((node) => {
     node.addEventListener('animationend', function onBottomOrgEnd(this: HTMLElement) {
-      if (this.classList.contains('fadeout1')) {
-        this.classList.remove('fadeout1');
-        this.classList.add('fadeout2');
-      } else {
-        this.classList.remove('fadeout2');
-      }
+      if (this.classList.contains('hit')) this.classList.remove('hit');
     });
   });
 }
