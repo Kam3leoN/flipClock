@@ -1,15 +1,16 @@
 {
   "name": "flipclock",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/ensure-k3ui.mjs",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
-    "@material/material-color-utilities": "^0.4.0"
+    "k3ui": "github:Kam3leoN/k3ui-expressive"
   },
   "devDependencies": {
     "sass": "^1.93.2",

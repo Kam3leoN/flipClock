@@ -4,7 +4,7 @@ export default defineConfig({
   base: '/',
   publicDir: 'public',
   optimizeDeps: {
-    include: ['@material/material-color-utilities'],
+    include: ['k3ui', '@material/material-color-utilities'],
   },
   build: {
     outDir: 'dist',

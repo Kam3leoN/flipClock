@@ -1,3 +1,5 @@
+import 'k3ui/k3ui.css';
+import 'k3ui/fonts-ui.css';
 import './styles.scss';
 import {
   applyExpressiveTheme,
@@ -22,6 +24,19 @@ interface FlipDetail {
   m: boolean;
 }
 
+interface SegmentChangeDetail {
+  indices: number[];
+  values: string[];
+}
+
+interface SwitchChangeDetail {
+  selected: boolean;
+}
+
+interface SliderChangeDetail {
+  value: number;
+}
+
 const SCALE_MAX = 100;
 const SCALE_MIN = 50;
 const BRIGHTNESS_MAX = 100;
@@ -29,8 +44,17 @@ const BRIGHTNESS_MIN = 50;
 const TICK_MS = 250;
 const HOVER_HIDE_MS = 3000;
 const IS_FLIP_TEST = false;
-const TF_LABELS = ['12', '00', '0'] as const;
 const THEME_CYCLE: ColorMode[] = ['dark', 'light', 'system'];
+const THEME_ICONS: Record<ColorMode, string> = {
+  dark: 'dark_mode',
+  light: 'light_mode',
+  system: 'brightness_auto',
+};
+const THEME_LABELS: Record<ColorMode, string> = {
+  dark: 'Dark',
+  light: 'Light',
+  system: 'Auto',
+};
 
 let displayedHour: number | undefined;
 let displayedMinute: string | undefined;
@@ -143,29 +167,36 @@ function setFlipText(el: Element, text: string | number): void {
   if (span) span.textContent = String(text);
 }
 
-function syncThemeButton(): void {
-  const btn = document.getElementById('theme-container');
-  if (!btn) return;
-  const labels: Record<ColorMode, string> = {
-    system: 'Auto',
-    dark: 'Dark',
-    light: 'Light',
-  };
-  btn.title = `Theme: ${labels[colorMode]}`;
-  btn.setAttribute('aria-label', `Theme ${labels[colorMode]}`);
-  btn.dataset.mode = colorMode;
+function msIcon(name: string): string {
+  return `<span class="ms notranslate" translate="no" lang="zxx" data-k3-icon="${name}" aria-hidden="true"></span>`;
 }
 
-function applyThemeFromMode(): void {
-  applyExpressiveTheme(resolveIsDark(colorMode));
+function syncThemeButton(): void {
+  const btn = document.getElementById('theme-btn');
+  if (!btn) return;
+  const label = THEME_LABELS[colorMode];
+  btn.setAttribute('label', `Theme: ${label}`);
+  btn.setAttribute('aria-label', `Theme ${label}`);
+  btn.dataset.mode = colorMode;
+  btn.innerHTML = msIcon(THEME_ICONS[colorMode]);
+}
+
+async function applyThemeFromMode(): Promise<void> {
+  await applyExpressiveTheme(colorMode);
+  document.documentElement.dataset.theme = resolveIsDark(colorMode)
+    ? 'dark'
+    : 'light';
+  document.documentElement.style.colorScheme = resolveIsDark(colorMode)
+    ? 'dark'
+    : 'light';
   syncThemeButton();
 }
 
-function cycleTheme(): void {
+async function cycleTheme(): Promise<void> {
   const idx = THEME_CYCLE.indexOf(colorMode);
   colorMode = THEME_CYCLE[(idx + 1) % THEME_CYCLE.length]!;
   setStorage('theme', colorMode);
-  applyThemeFromMode();
+  await applyThemeFromMode();
 }
 
 function updateSettings(patch: SettingsPatch): void {
@@ -223,7 +254,7 @@ function updateSettings(patch: SettingsPatch): void {
   if (Object.prototype.hasOwnProperty.call(patch, 'theme') && patch.theme) {
     colorMode = patch.theme;
     setStorage('theme', colorMode);
-    applyThemeFromMode();
+    void applyThemeFromMode();
   }
 }
 
@@ -266,19 +297,18 @@ function loadPersistedSettings(): void {
 }
 
 function applyLoadedSettingsToUi(): void {
-  const tfSelect = document.getElementById('tf') as HTMLSelectElement | null;
-  if (tfSelect) {
-    tfSelect.value = String(timeFormat);
-    document
-      .getElementById('tf-container')
-      ?.dispatchEvent(new CustomEvent('_change'));
-  }
+  const tf = document.getElementById('tf') as
+    | (HTMLElement & { setSelectedIndices?: (i: number[]) => void })
+    | null;
+  tf?.setSelectedIndices?.([timeFormat]);
 
-  const bgCheckbox = document.getElementById('bg') as HTMLInputElement | null;
-  if (bgCheckbox) bgCheckbox.checked = showFlaps;
+  const flaps = document.getElementById('bg') as
+    | (HTMLElement & { selected?: boolean })
+    | null;
+  if (flaps) flaps.selected = showFlaps;
   requireEl('main-content-area').classList.toggle('dark', !showFlaps);
 
-  applyThemeFromMode();
+  syncThemeButton();
   dispatchBody('_updateBrightness', { value: brightness });
   dispatchBody('_updateScale', { value: scale });
   window.focus();
@@ -306,35 +336,57 @@ function clearHoverTimer(): void {
 
 function mountSettingsUi(): void {
   const main = requireEl('main');
+  const segments = JSON.stringify([
+    { label: '12', value: '0' },
+    { label: '00', value: '1' },
+    { label: '0', value: '2' },
+  ]);
+
   main.insertAdjacentHTML(
     'beforebegin',
-    `<div id="settings" role="toolbar" aria-label="Clock settings"><dl>
-      <dt>Hour Format</dt>
-      <dd title="Hour Format"><label id="tf-container">
-        <select id="tf" tabindex="0" aria-label="Hour format">
-          <option value="0"${timeFormat === 0 ? ' selected' : ''}>&nbsp;1-12 AM/PM&nbsp;</option>
-          <option value="1"${timeFormat === 1 ? ' selected' : ''}>&nbsp;00-23&nbsp;</option>
-          <option value="2"${timeFormat === 2 ? ' selected' : ''}>&nbsp;0-23&nbsp;</option>
-        </select>
-      </label></dd>
-      <dt>Show</dt>
-      <dd title="Show Flaps" id="bg-container">
-        <input id="bg" type="checkbox" tabindex="0" ${showFlaps ? 'checked' : ''} />
-        <label for="bg">Show Flaps</label>
-      </dd>
-      <dt>Theme</dt>
-      <dd title="Theme">
-        <button type="button" id="theme-container" tabindex="0"></button>
-      </dd>
-      <dt>Scale</dt>
-      <dd title="Scale"><label id="scale-container">
-        <input id="scale" type="range" min="${SCALE_MIN}" max="${SCALE_MAX}" value="${scale}" step="0.1" tabindex="0" aria-label="Scale" />
-      </label></dd>
-      <dt>Brightness</dt>
-      <dd title="Brightness"><label id="brightness-container">
-        <input id="brightness" type="range" min="${BRIGHTNESS_MIN}" max="${BRIGHTNESS_MAX}" value="${brightness}" step="0.1" tabindex="0" aria-label="Brightness" />
-      </label></dd>
-    </dl></div>`,
+    `<div id="settings" role="toolbar" aria-label="Clock settings">
+      <k3-button-segmented
+        id="tf"
+        shape="rounded"
+        aria-label="Hour format"
+        segments='${segments}'
+        selected-indices="[${timeFormat}]"
+      ></k3-button-segmented>
+      <k3-switch id="bg" aria-label="Show flaps" ${showFlaps ? 'selected' : ''}>
+        ${msIcon('view_agenda')}
+      </k3-switch>
+      <k3-icon-button
+        id="theme-btn"
+        variant="standard"
+        size="sm"
+        shape="round"
+        label="Theme"
+      >${msIcon(THEME_ICONS[colorMode])}</k3-icon-button>
+      <k3-slider
+        id="scale"
+        class="settings-slider"
+        size="xs"
+        min="${SCALE_MIN}"
+        max="${SCALE_MAX}"
+        step="1"
+        value="${scale}"
+        label="Scale"
+        aria-label="Scale"
+        value-indicator
+      ></k3-slider>
+      <k3-slider
+        id="brightness"
+        class="settings-slider"
+        size="xs"
+        min="${BRIGHTNESS_MIN}"
+        max="${BRIGHTNESS_MAX}"
+        step="1"
+        value="${brightness}"
+        label="Brightness"
+        aria-label="Brightness"
+        value-indicator
+      ></k3-slider>
+    </div>`,
   );
 
   const settings = requireEl('settings');
@@ -350,57 +402,41 @@ function mountSettingsUi(): void {
     setHoverTimer();
   });
 
-  const tfSelect = requireEl<HTMLSelectElement>('tf');
-  const tfContainer = requireEl('tf-container');
+  requireEl('tf').addEventListener('k3-change', ((event: CustomEvent<SegmentChangeDetail>) => {
+    const raw = event.detail?.values?.[0] ?? event.detail?.indices?.[0];
+    if (raw === undefined) return;
+    updateSettings({ tf: raw });
+  }) as EventListener);
 
-  tfSelect.addEventListener('change', (event) => {
-    const target = event.target as HTMLSelectElement;
-    updateSettings({ tf: target.value });
-    tfContainer.dispatchEvent(new CustomEvent('_change'));
-    target.blur();
-  });
-  tfSelect.addEventListener('keyup', (event) => {
-    if (event.key === 'Escape' || event.key === 'Enter') {
-      (event.target as HTMLSelectElement).blur();
-    }
-  });
-
-  tfContainer.dataset.disp = JSON.stringify([...TF_LABELS]);
-  tfContainer.addEventListener('_change', function onTfChange(this: HTMLElement) {
-    const labels = JSON.parse(this.dataset.disp ?? '[]') as string[];
-    this.setAttribute('data-tf', labels[timeFormat] ?? '12');
-  });
-  tfContainer.dispatchEvent(new CustomEvent('_change'));
-
-  requireEl<HTMLInputElement>('bg').addEventListener('change', (event) => {
+  requireEl('bg').addEventListener('k3-change', ((event: CustomEvent<SwitchChangeDetail>) => {
     updateSettings({
-      sb: (event.target as HTMLInputElement).checked,
+      sb: Boolean(event.detail?.selected),
       anm: true,
     });
-  });
+  }) as EventListener);
 
-  requireEl('theme-container').addEventListener('click', (event) => {
+  requireEl('theme-btn').addEventListener('k3-click', (event) => {
     event.stopPropagation();
-    cycleTheme();
+    void cycleTheme();
   });
 
-  requireEl<HTMLInputElement>('scale').addEventListener('input', (event) => {
-    const value = (event.target as HTMLInputElement).value;
-    scale = clamp(Number(value), SCALE_MIN, SCALE_MAX);
+  const scaleEl = requireEl('scale');
+  scaleEl.addEventListener('k3-input', ((event: CustomEvent<SliderChangeDetail>) => {
+    scale = clamp(Number(event.detail?.value), SCALE_MIN, SCALE_MAX);
     dispatchBody('_updateScale', { value: scale });
-  });
-  requireEl<HTMLInputElement>('scale').addEventListener('change', (event) => {
-    updateSettings({ sc: (event.target as HTMLInputElement).value });
-  });
+  }) as EventListener);
+  scaleEl.addEventListener('k3-change', ((event: CustomEvent<SliderChangeDetail>) => {
+    updateSettings({ sc: event.detail?.value });
+  }) as EventListener);
 
-  requireEl<HTMLInputElement>('brightness').addEventListener('input', (event) => {
-    const value = (event.target as HTMLInputElement).value;
-    brightness = clamp(Number(value), BRIGHTNESS_MIN, BRIGHTNESS_MAX);
+  const brightnessEl = requireEl('brightness');
+  brightnessEl.addEventListener('k3-input', ((event: CustomEvent<SliderChangeDetail>) => {
+    brightness = clamp(Number(event.detail?.value), BRIGHTNESS_MIN, BRIGHTNESS_MAX);
     dispatchBody('_updateBrightness', { value: brightness });
-  });
-  requireEl<HTMLInputElement>('brightness').addEventListener('change', (event) => {
-    updateSettings({ br: (event.target as HTMLInputElement).value });
-  });
+  }) as EventListener);
+  brightnessEl.addEventListener('k3-change', ((event: CustomEvent<SliderChangeDetail>) => {
+    updateSettings({ br: event.detail?.value });
+  }) as EventListener);
 
   syncThemeButton();
 }
@@ -431,8 +467,10 @@ function bindScaleAndBrightness(): void {
         ? scale
         : clamp(Number(raw), SCALE_MIN, SCALE_MAX);
     scale = value;
-    const slider = document.getElementById('scale') as HTMLInputElement | null;
-    if (slider && slider.value !== String(value)) slider.value = String(value);
+    const slider = document.getElementById('scale') as
+      | (HTMLElement & { value?: number })
+      | null;
+    if (slider && slider.value !== value) slider.value = value;
     requireEl('main').style.transform = `scale(${(value / 100) * orientationScale})`;
   }) as EventListener);
 
@@ -443,8 +481,10 @@ function bindScaleAndBrightness(): void {
         ? brightness
         : clamp(Number(raw), BRIGHTNESS_MIN, BRIGHTNESS_MAX);
     brightness = value;
-    const slider = document.getElementById('brightness') as HTMLInputElement | null;
-    if (slider && slider.value !== String(value)) slider.value = String(value);
+    const slider = document.getElementById('brightness') as
+      | (HTMLElement & { value?: number })
+      | null;
+    if (slider && slider.value !== value) slider.value = value;
     requireEl('main-content-area').style.filter = `brightness(${value}%)`;
   }) as EventListener);
 }
@@ -465,13 +505,8 @@ function bindResize(): void {
     );
 
     document.body.classList.toggle('portrait', portrait);
-    if (orientationScale !== next) {
-      orientationScale = next;
-      dispatchBody('_updateScale', { value: scale });
-    } else {
-      // Still apply transform on first layout
-      dispatchBody('_updateScale', { value: scale });
-    }
+    orientationScale = next;
+    dispatchBody('_updateScale', { value: scale });
   });
 
   window.addEventListener('resize', () => {
@@ -662,31 +697,32 @@ function bindHoverChrome(): void {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  loadPersistedSettings();
-  applyExpressiveTheme(resolveIsDark(colorMode));
+  void (async () => {
+    loadPersistedSettings();
+    await applyThemeFromMode();
 
-  mountSettingsUi();
-  prepareFlipNodes();
-  bindScaleAndBrightness();
-  bindClock();
-  bindHoverChrome();
-  bindResize();
-  window.dispatchEvent(new CustomEvent('_resize'));
+    mountSettingsUi();
+    prepareFlipNodes();
+    bindScaleAndBrightness();
+    bindClock();
+    bindHoverChrome();
+    bindResize();
+    window.dispatchEvent(new CustomEvent('_resize'));
 
-  requireEl('loader').addEventListener(
-    'transitionend',
-    function onLoaderGone(this: HTMLElement) {
-      this.remove();
-    },
-    { once: true },
-  );
+    requireEl('loader').addEventListener(
+      'transitionend',
+      function onLoaderGone(this: HTMLElement) {
+        this.remove();
+      },
+      { once: true },
+    );
 
-  // Listeners are ready — now apply stored values + start clock.
-  applyLoadedSettingsToUi();
+    applyLoadedSettingsToUi();
 
-  window
-    .matchMedia('(prefers-color-scheme: dark)')
-    .addEventListener('change', () => {
-      if (colorMode === 'system') applyThemeFromMode();
-    });
+    window
+      .matchMedia('(prefers-color-scheme: dark)')
+      .addEventListener('change', () => {
+        if (colorMode === 'system') void applyThemeFromMode();
+      });
+  })();
 });
