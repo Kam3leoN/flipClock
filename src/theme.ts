@@ -1,28 +1,70 @@
-import { K3UI, type InitOptions } from 'k3ui';
+import {
+  K3UI,
+  M2_PALETTE_NAMES,
+  M2_PALETTES,
+  type InitOptions,
+  type M2PaletteName,
+} from 'k3ui';
 
 export type ColorMode = 'dark' | 'light' | 'system';
+export type ColorSpecVersion = '2021' | '2025';
+export type MotionScheme = 'standard' | 'expressive';
+export type ColorVariant =
+  | 'tonalspot'
+  | 'vibrant'
+  | 'fidelity'
+  | 'expressive'
+  | 'monochrome'
+  | 'neutral'
+  | 'rainbow'
+  | 'fruitsalad';
 
-/** Seed — Material expressive violet. */
-export const SEED = '#6750A4';
+export type { M2PaletteName };
+export { M2_PALETTE_NAMES, M2_PALETTES };
 
-export const SEED_PRESETS = [
-  '#6750A4',
-  '#006A6A',
-  '#8B5000',
-  '#B3261E',
-  '#1B6EF3',
-  '#386A20',
+/** Seed — Material expressive violet (Deep Purple 500). */
+export const SEED = '#673AB7';
+
+export const COLOR_VARIANTS: readonly ColorVariant[] = [
+  'tonalspot',
+  'vibrant',
+  'fidelity',
+  'expressive',
+  'monochrome',
+  'neutral',
+  'rainbow',
+  'fruitsalad',
 ] as const;
+
+export const VARIANT_LABELS: Record<ColorVariant, string> = {
+  tonalspot: 'Tonal spot',
+  vibrant: 'Vibrant',
+  fidelity: 'Fidelity',
+  expressive: 'Expressive',
+  monochrome: 'Monochrome',
+  neutral: 'Neutral',
+  rainbow: 'Rainbow',
+  fruitsalad: 'Fruit salad',
+};
 
 const SETTINGS_COMPONENTS = [
   'k3-sheet',
-  'k3-fab',
+  'k3-fab-menu',
+  'k3-fab-menu-item',
   'k3-button',
   'k3-slider',
   'k3-switch',
-  'k3-icon-button',
   'k3-button-segmented',
+  'k3-select',
 ] as const;
+
+export interface ThemeConfig {
+  mode: ColorMode;
+  seed: string;
+  variant: ColorVariant;
+  specVersion: ColorSpecVersion;
+  motion: MotionScheme;
+}
 
 function flipDigitVar(isDark: boolean): void {
   const root = document.documentElement;
@@ -111,22 +153,54 @@ export function normalizeHex(raw: string | null | undefined): string | null {
   return h.toUpperCase();
 }
 
+export function parseColorVariant(raw: string | null | undefined): ColorVariant {
+  return COLOR_VARIANTS.includes(raw as ColorVariant)
+    ? (raw as ColorVariant)
+    : 'expressive';
+}
+
+export function parseSpecVersion(raw: string | null | undefined): ColorSpecVersion {
+  return raw === '2021' ? '2021' : '2025';
+}
+
+export function parseMotionScheme(raw: string | null | undefined): MotionScheme {
+  return raw === 'standard' ? 'standard' : 'expressive';
+}
+
+export function m2Label(name: M2PaletteName): string {
+  return name
+    .split('-')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+export function m2SeedHex(name: M2PaletteName): string | null {
+  return normalizeHex(M2_PALETTES[name]['500']);
+}
+
+/** Match seed to an M2 500 swatch, else `null` (custom). */
+export function findM2Palette(seed: string): M2PaletteName | null {
+  const hex = normalizeHex(seed);
+  if (!hex) return null;
+  for (const name of M2_PALETTE_NAMES) {
+    if (normalizeHex(M2_PALETTES[name]['500']) === hex) return name;
+  }
+  return null;
+}
+
 /**
- * Apply K3ui Material You Expressive theme (seed + mode).
- * K3ui writes both `--k3-sys-color-*` and `--md-sys-color-*`.
+ * Apply K3ui Material You theme (seed · mode · variant · spec · motion).
+ * Writes both `--k3-sys-color-*` and `--md-sys-color-*`.
  */
-export async function applyExpressiveTheme(
-  mode: ColorMode,
-  seed = SEED,
-): Promise<void> {
-  const hex = normalizeHex(seed) ?? SEED;
+export async function applyExpressiveTheme(config: ThemeConfig): Promise<void> {
+  const hex = normalizeHex(config.seed) ?? SEED;
   const options: InitOptions = {
     theme: {
       seed: hex,
-      mode,
-      variant: 'expressive',
-      specVersion: '2025',
-      motion: 'expressive',
+      mode: config.mode,
+      variant: config.variant,
+      specVersion: config.specVersion,
+      motion: config.motion,
       contrast: 'default',
     },
     motion: { reduce: 'system' },
@@ -137,7 +211,7 @@ export async function applyExpressiveTheme(
   };
 
   await K3UI.init(options);
-  flipDigitVar(resolveIsDark(mode));
+  flipDigitVar(resolveIsDark(config.mode));
 
   const themeMeta = document.querySelector('meta[name="theme-color"]');
   if (themeMeta) {

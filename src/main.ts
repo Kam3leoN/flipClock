@@ -3,11 +3,23 @@ import 'k3ui/fonts-ui.css';
 import './styles.scss';
 import {
   applyExpressiveTheme,
+  COLOR_VARIANTS,
+  findM2Palette,
+  m2Label,
+  m2SeedHex,
+  M2_PALETTE_NAMES,
   normalizeHex,
+  parseColorVariant,
+  parseMotionScheme,
+  parseSpecVersion,
   resolveIsDark,
   SEED,
-  SEED_PRESETS,
+  VARIANT_LABELS,
   type ColorMode,
+  type ColorSpecVersion,
+  type ColorVariant,
+  type M2PaletteName,
+  type MotionScheme,
 } from './theme';
 
 /** Time format: 0 = 12h AM/PM, 1 = 00–23, 2 = 0–23 */
@@ -22,6 +34,9 @@ interface SettingsPatch {
   theme?: ColorMode;
   date?: boolean;
   seed?: string;
+  variant?: ColorVariant;
+  spec?: ColorSpecVersion;
+  motion?: MotionScheme;
 }
 
 interface FlipDetail {
@@ -42,10 +57,17 @@ interface SliderChangeDetail {
   value: number;
 }
 
+interface SelectChangeDetail {
+  value: string;
+}
+
 type SheetEl = HTMLElement & {
   show: () => Promise<boolean>;
   hide: () => Promise<boolean>;
   open: boolean;
+  placement: 'bottom' | 'side';
+  side: 'start' | 'end';
+  width: 'standard' | 'full';
 };
 
 const SCALE_MAX = 100;
@@ -55,17 +77,11 @@ const BRIGHTNESS_MIN = 50;
 const TICK_MS = 250;
 const HOVER_HIDE_MS = 3000;
 const IS_FLIP_TEST = false;
+const PHONE_MQ = '(max-width: 600px)';
 const THEME_CYCLE: ColorMode[] = ['dark', 'light', 'system'];
-const THEME_ICONS: Record<ColorMode, string> = {
-  dark: 'dark_mode',
-  light: 'light_mode',
-  system: 'brightness_auto',
-};
-const THEME_LABELS: Record<ColorMode, string> = {
-  dark: 'Dark',
-  light: 'Light',
-  system: 'Auto',
-};
+const URL_FLIPCLOCK = 'https://github.com/Kam3leoN/flipClock';
+const URL_K3UI = 'https://github.com/Kam3leoN/k3ui-expressive';
+const URL_K3UI_DOC = 'https://k3ui-expressive.vercel.app';
 
 let displayedHour: number | undefined;
 let displayedMinute: string | undefined;
@@ -79,6 +95,9 @@ let orientationScale = 1;
 let brightness = BRIGHTNESS_MAX;
 let colorMode: ColorMode = 'dark';
 let seedColor = SEED;
+let colorVariant: ColorVariant = 'expressive';
+let colorSpec: ColorSpecVersion = '2025';
+let motionScheme: MotionScheme = 'expressive';
 let hoverTimer: ReturnType<typeof setTimeout> | null = null;
 let settingsOpen = false;
 
@@ -219,37 +238,54 @@ function updateDateDisplay(now = new Date()): void {
   displayedDateKey = key;
 }
 
-function syncThemeControls(): void {
-  const btn = document.getElementById('theme-btn');
-  if (btn) {
-    const label = THEME_LABELS[colorMode];
-    btn.setAttribute('label', `Theme: ${label}`);
-    btn.setAttribute('aria-label', `Theme ${label}`);
-    btn.dataset.mode = colorMode;
-    btn.innerHTML = msIcon(THEME_ICONS[colorMode]);
-  }
+function themeConfig() {
+  return {
+    mode: colorMode,
+    seed: seedColor,
+    variant: colorVariant,
+    specVersion: colorSpec,
+    motion: motionScheme,
+  };
+}
 
+function syncThemeControls(): void {
   const themeSeg = document.getElementById('theme-seg') as
     | (HTMLElement & { setSelectedIndices?: (i: number[]) => void })
     | null;
   const idx = THEME_CYCLE.indexOf(colorMode);
   themeSeg?.setSelectedIndices?.(idx >= 0 ? [idx] : [0]);
-}
 
-function syncSeedControls(): void {
+  const specSeg = document.getElementById('spec-seg') as
+    | (HTMLElement & { setSelectedIndices?: (i: number[]) => void })
+    | null;
+  specSeg?.setSelectedIndices?.(colorSpec === '2021' ? [0] : [1]);
+
+  const motionSeg = document.getElementById('motion-seg') as
+    | (HTMLElement & { setSelectedIndices?: (i: number[]) => void })
+    | null;
+  motionSeg?.setSelectedIndices?.(motionScheme === 'standard' ? [0] : [1]);
+
+  const variantSel = document.getElementById('variant-select') as
+    | (HTMLElement & { value?: string })
+    | null;
+  if (variantSel) variantSel.value = colorVariant;
+
+  const m2 = findM2Palette(seedColor);
+  const colorSel = document.getElementById('color-select') as
+    | (HTMLElement & { value?: string })
+    | null;
+  if (colorSel) colorSel.value = m2 ?? 'custom';
+
   const picker = document.getElementById('seed-picker') as HTMLInputElement | null;
   if (picker && picker.value.toUpperCase() !== seedColor) {
     picker.value = seedColor;
   }
-  document.querySelectorAll<HTMLElement>('[data-seed]').forEach((el) => {
-    const hex = normalizeHex(el.getAttribute('data-seed'));
-    el.toggleAttribute('aria-pressed', hex === seedColor);
-    el.classList.toggle('is-active', hex === seedColor);
-  });
+  const customRow = document.getElementById('custom-color-row');
+  customRow?.classList.toggle('is-visible', !m2);
 }
 
 async function applyThemeFromMode(): Promise<void> {
-  await applyExpressiveTheme(colorMode, seedColor);
+  await applyExpressiveTheme(themeConfig());
   document.documentElement.dataset.theme = resolveIsDark(colorMode)
     ? 'dark'
     : 'light';
@@ -257,13 +293,12 @@ async function applyThemeFromMode(): Promise<void> {
     ? 'dark'
     : 'light';
   syncThemeControls();
-  syncSeedControls();
 }
 
 async function setSeed(next: string): Promise<void> {
   const hex = normalizeHex(next);
   if (!hex || hex === seedColor) {
-    syncSeedControls();
+    syncThemeControls();
     return;
   }
   seedColor = hex;
@@ -271,11 +306,15 @@ async function setSeed(next: string): Promise<void> {
   await applyThemeFromMode();
 }
 
-async function cycleTheme(): Promise<void> {
-  const idx = THEME_CYCLE.indexOf(colorMode);
-  colorMode = THEME_CYCLE[(idx + 1) % THEME_CYCLE.length]!;
-  setStorage('theme', colorMode);
-  await applyThemeFromMode();
+function syncSheetPlacement(sheet: SheetEl): void {
+  const phone = window.matchMedia(PHONE_MQ).matches;
+  if (phone) {
+    sheet.placement = 'bottom';
+    sheet.width = 'full';
+  } else {
+    sheet.placement = 'side';
+    sheet.side = 'end';
+  }
 }
 
 function updateSettings(patch: SettingsPatch): void {
@@ -348,6 +387,24 @@ function updateSettings(patch: SettingsPatch): void {
   if (Object.prototype.hasOwnProperty.call(patch, 'seed') && patch.seed) {
     void setSeed(patch.seed);
   }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'variant') && patch.variant) {
+    colorVariant = patch.variant;
+    setStorage('variant', colorVariant);
+    void applyThemeFromMode();
+  }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'spec') && patch.spec) {
+    colorSpec = patch.spec;
+    setStorage('spec', colorSpec);
+    void applyThemeFromMode();
+  }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'motion') && patch.motion) {
+    motionScheme = patch.motion;
+    setStorage('motion', motionScheme);
+    void applyThemeFromMode();
+  }
 }
 
 function loadPersistedSettings(): void {
@@ -394,6 +451,9 @@ function loadPersistedSettings(): void {
 
   colorMode = parseColorMode(getStorage('theme'));
   seedColor = normalizeHex(getStorage('seed')) ?? SEED;
+  colorVariant = parseColorVariant(getStorage('variant'));
+  colorSpec = parseSpecVersion(getStorage('spec'));
+  motionScheme = parseMotionScheme(getStorage('motion'));
 }
 
 function applyLoadedSettingsToUi(): void {
@@ -416,7 +476,6 @@ function applyLoadedSettingsToUi(): void {
   updateDateDisplay();
 
   syncThemeControls();
-  syncSeedControls();
   dispatchBody('_updateBrightness', { value: brightness });
   dispatchBody('_updateScale', { value: scale });
   window.focus();
@@ -443,8 +502,8 @@ function clearHoverTimer(): void {
   }
 }
 
-function mountSettingsUi(): void {
-  const segments = JSON.stringify([
+function mountChromeUi(): void {
+  const hourSegments = JSON.stringify([
     { label: '12', value: '0' },
     { label: '00', value: '1' },
     { label: '0', value: '2' },
@@ -452,20 +511,36 @@ function mountSettingsUi(): void {
   const themeSegments = JSON.stringify([
     { label: 'Dark', value: 'dark' },
     { label: 'Light', value: 'light' },
-    { label: 'Auto', value: 'system' },
+    { label: 'System', value: 'system' },
+  ]);
+  const specSegments = JSON.stringify([
+    { label: '2021', value: '2021' },
+    { label: '2025', value: '2025' },
+  ]);
+  const motionSegments = JSON.stringify([
+    { label: 'Standard', value: 'standard' },
+    { label: 'Expressive', value: 'expressive' },
   ]);
   const themeIdx = Math.max(0, THEME_CYCLE.indexOf(colorMode));
-  const presets = SEED_PRESETS.map(
-    (hex) =>
-      `<button type="button" class="seed-preset" data-seed="${hex}" style="--seed:${hex}" aria-label="Seed ${hex}" aria-pressed="false"></button>`,
+  const m2Options = M2_PALETTE_NAMES.map(
+    (name) => `<k3-menu-item value="${name}">${m2Label(name)}</k3-menu-item>`,
   ).join('');
+  const variantOptions = COLOR_VARIANTS.map(
+    (v) => `<k3-menu-item value="${v}">${VARIANT_LABELS[v]}</k3-menu-item>`,
+  ).join('');
+  const m2Current = findM2Palette(seedColor) ?? 'custom';
 
   document.body.insertAdjacentHTML(
     'beforeend',
-    `<k3-fab id="settings-trigger" class="settings-trigger" size="default" variant="primary" aria-label="Open settings">
-      ${msIcon('settings')}
-    </k3-fab>
-    <k3-sheet id="settings-sheet" placement="bottom" width="standard" modal>
+    `<k3-fab-menu id="app-fab-menu" class="settings-trigger" size="default" variant="primary" placement="bottom-end" aria-label="Menu">
+      <span slot="icon" class="ms notranslate" translate="no" lang="zxx" data-k3-icon="menu" aria-hidden="true"></span>
+      <k3-fab-menu-item id="fab-settings" icon="settings">Settings</k3-fab-menu-item>
+      <k3-fab-menu-item id="fab-flipclock" icon="code">FlipClock repo</k3-fab-menu-item>
+      <k3-fab-menu-item id="fab-k3ui" icon="widgets">K3ui Expressive</k3-fab-menu-item>
+      <k3-fab-menu-item id="fab-docs" icon="menu_book">K3ui docs</k3-fab-menu-item>
+    </k3-fab-menu>
+
+    <k3-sheet id="settings-sheet" placement="side" side="end" modal>
       <span slot="headline">Settings</span>
       <div class="settings-body">
         <div class="opt-row">
@@ -474,7 +549,7 @@ function mountSettingsUi(): void {
             id="tf"
             shape="rounded"
             aria-label="Hour format"
-            segments='${segments}'
+            segments='${hourSegments}'
             selected-indices="[${timeFormat}]"
           ></k3-button-segmented>
         </div>
@@ -486,26 +561,62 @@ function mountSettingsUi(): void {
           <span class="opt-label">Show flaps</span>
           <k3-switch id="bg" aria-label="Show flaps" ${showFlaps ? 'selected' : ''}></k3-switch>
         </div>
-        <div class="opt-row">
+
+        <div class="opt-block">
           <span class="opt-label">Theme</span>
           <k3-button-segmented
             id="theme-seg"
             shape="rounded"
-            aria-label="Color theme"
+            aria-label="Color scheme"
             segments='${themeSegments}'
             selected-indices="[${themeIdx}]"
           ></k3-button-segmented>
         </div>
+
         <div class="opt-block">
-          <span class="opt-label">Primitive color</span>
-          <div class="seed-row">
+          <span class="opt-label">Color spec</span>
+          <k3-button-segmented
+            id="spec-seg"
+            shape="rounded"
+            aria-label="Color spec"
+            segments='${specSegments}'
+            selected-indices="[${colorSpec === '2021' ? 0 : 1}]"
+          ></k3-button-segmented>
+        </div>
+
+        <div class="opt-block">
+          <span class="opt-label">Variant</span>
+          <k3-select id="variant-select" label="Variant" variant="outlined" value="${colorVariant}">
+            ${variantOptions}
+          </k3-select>
+        </div>
+
+        <div class="opt-block">
+          <span class="opt-label">M2 color</span>
+          <k3-select id="color-select" label="Material color" variant="outlined" value="${m2Current}">
+            ${m2Options}
+            <k3-menu-item value="custom">Custom…</k3-menu-item>
+          </k3-select>
+          <div id="custom-color-row" class="seed-row ${m2Current === 'custom' ? 'is-visible' : ''}">
             <label class="seed-picker-wrap" title="Pick color">
-              <input id="seed-picker" type="color" value="${seedColor}" aria-label="Primitive color" />
+              <input id="seed-picker" type="color" value="${seedColor}" aria-label="Custom primitive color" />
               ${msIcon('palette')}
             </label>
-            <div class="seed-presets" role="group" aria-label="Color presets">${presets}</div>
+            <span class="seed-hex">${seedColor}</span>
           </div>
         </div>
+
+        <div class="opt-block">
+          <span class="opt-label">Motion</span>
+          <k3-button-segmented
+            id="motion-seg"
+            shape="rounded"
+            aria-label="Motion scheme"
+            segments='${motionSegments}'
+            selected-indices="[${motionScheme === 'standard' ? 0 : 1}]"
+          ></k3-button-segmented>
+        </div>
+
         <div class="opt-block">
           <k3-slider
             id="scale"
@@ -534,13 +645,23 @@ function mountSettingsUi(): void {
         </div>
       </div>
       <k3-button slot="actions" id="settings-done" variant="filled" size="sm">Done</k3-button>
-    </k3-sheet>`,
+    </k3-sheet>
+
+    <footer id="site-credit" aria-label="Copyright">
+      <span>2026 &copy; Code &amp; Design with</span>
+      <span class="heart" aria-hidden="true">${msIcon('favorite')}</span>
+      <span>par Kam3leoN</span>
+    </footer>`,
   );
 
   const sheet = requireEl('settings-sheet') as SheetEl;
-  const trigger = requireEl('settings-trigger');
+  syncSheetPlacement(sheet);
+  window.matchMedia(PHONE_MQ).addEventListener('change', () => {
+    if (!settingsOpen) syncSheetPlacement(sheet);
+  });
 
   const openSheet = (): void => {
+    syncSheetPlacement(sheet);
     settingsOpen = true;
     document.body.classList.add('hover', 'pause', 'settings-open');
     void sheet.show();
@@ -553,10 +674,17 @@ function mountSettingsUi(): void {
     });
   };
 
-  trigger.addEventListener('k3-click', (event) => {
-    event.stopPropagation();
-    openSheet();
+  requireEl('fab-settings').addEventListener('k3-click', () => openSheet());
+  requireEl('fab-flipclock').addEventListener('k3-click', () => {
+    window.open(URL_FLIPCLOCK, '_blank', 'noopener,noreferrer');
   });
+  requireEl('fab-k3ui').addEventListener('k3-click', () => {
+    window.open(URL_K3UI, '_blank', 'noopener,noreferrer');
+  });
+  requireEl('fab-docs').addEventListener('k3-click', () => {
+    window.open(URL_K3UI_DOC, '_blank', 'noopener,noreferrer');
+  });
+
   requireEl('settings-done').addEventListener('k3-click', () => closeSheet());
   sheet.addEventListener('k3-close-end', () => {
     settingsOpen = false;
@@ -588,14 +716,41 @@ function mountSettingsUi(): void {
     }
   }) as EventListener);
 
+  requireEl('spec-seg').addEventListener('k3-change', ((event: CustomEvent<SegmentChangeDetail>) => {
+    const value = event.detail?.values?.[0];
+    if (value === '2021' || value === '2025') {
+      updateSettings({ spec: value });
+    }
+  }) as EventListener);
+
+  requireEl('motion-seg').addEventListener('k3-change', ((event: CustomEvent<SegmentChangeDetail>) => {
+    const value = event.detail?.values?.[0];
+    if (value === 'standard' || value === 'expressive') {
+      updateSettings({ motion: value });
+    }
+  }) as EventListener);
+
+  requireEl('variant-select').addEventListener('k3-change', ((event: CustomEvent<SelectChangeDetail>) => {
+    const value = parseColorVariant(event.detail?.value);
+    updateSettings({ variant: value });
+  }) as EventListener);
+
+  requireEl('color-select').addEventListener('k3-change', ((event: CustomEvent<SelectChangeDetail>) => {
+    const value = event.detail?.value;
+    if (!value || value === 'custom') {
+      syncThemeControls();
+      requireEl('seed-picker').click();
+      return;
+    }
+    const hex = m2SeedHex(value as M2PaletteName);
+    if (hex) void setSeed(hex);
+  }) as EventListener);
+
   requireEl<HTMLInputElement>('seed-picker').addEventListener('input', (event) => {
-    void setSeed((event.target as HTMLInputElement).value);
-  });
-  document.querySelectorAll<HTMLElement>('[data-seed]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const hex = btn.getAttribute('data-seed');
-      if (hex) void setSeed(hex);
-    });
+    const hex = (event.target as HTMLInputElement).value;
+    const label = document.querySelector('.seed-hex');
+    if (label) label.textContent = normalizeHex(hex) ?? hex;
+    void setSeed(hex);
   });
 
   const scaleEl = requireEl('scale');
@@ -616,16 +771,7 @@ function mountSettingsUi(): void {
     updateSettings({ br: event.detail?.value });
   }) as EventListener);
 
-  // Keep cycleTheme available via keyboard for power users (T).
-  window.addEventListener('keydown', (event) => {
-    if (event.key === 't' || event.key === 'T') {
-      if (settingsOpen) return;
-      void cycleTheme();
-    }
-  });
-
   syncThemeControls();
-  syncSeedControls();
 }
 
 function prepareFlipNodes(): void {
@@ -894,7 +1040,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadPersistedSettings();
     await applyThemeFromMode();
 
-    mountSettingsUi();
+    mountChromeUi();
     prepareFlipNodes();
     bindScaleAndBrightness();
     bindClock();
