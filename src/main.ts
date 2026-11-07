@@ -3,7 +3,10 @@ import 'k3ui/fonts-ui.css';
 import './styles.scss';
 import {
   applyExpressiveTheme,
+  normalizeHex,
   resolveIsDark,
+  SEED,
+  SEED_PRESETS,
   type ColorMode,
 } from './theme';
 
@@ -17,6 +20,8 @@ interface SettingsPatch {
   br?: number | string;
   sc?: number | string;
   theme?: ColorMode;
+  date?: boolean;
+  seed?: string;
 }
 
 interface FlipDetail {
@@ -36,6 +41,12 @@ interface SwitchChangeDetail {
 interface SliderChangeDetail {
   value: number;
 }
+
+type SheetEl = HTMLElement & {
+  show: () => Promise<boolean>;
+  hide: () => Promise<boolean>;
+  open: boolean;
+};
 
 const SCALE_MAX = 100;
 const SCALE_MIN = 50;
@@ -58,14 +69,18 @@ const THEME_LABELS: Record<ColorMode, string> = {
 
 let displayedHour: number | undefined;
 let displayedMinute: string | undefined;
+let displayedDateKey: string | undefined;
 let timeFormat: TimeFormat = 0;
 let displayedTimeFormat: TimeFormat = 0;
 let showFlaps = true;
+let showDate = true;
 let scale = SCALE_MAX;
 let orientationScale = 1;
 let brightness = BRIGHTNESS_MAX;
 let colorMode: ColorMode = 'dark';
+let seedColor = SEED;
 let hoverTimer: ReturnType<typeof setTimeout> | null = null;
+let settingsOpen = false;
 
 function setStorage(key: string, value: string | number | boolean): void {
   localStorage.setItem(key, String(value));
@@ -133,6 +148,21 @@ function formatMinute(minute: number): string {
   return minute < 10 ? `0${minute}` : String(minute);
 }
 
+function formatFullDate(now: Date): { text: string; iso: string } {
+  const text = new Intl.DateTimeFormat(undefined, {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }).format(now);
+  const iso = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+  ].join('-');
+  return { text, iso };
+}
+
 function requireEl<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
   if (!el) throw new Error(`Missing #${id}`);
@@ -171,25 +201,74 @@ function msIcon(name: string): string {
   return `<span class="ms notranslate" translate="no" lang="zxx" data-k3-icon="${name}" aria-hidden="true"></span>`;
 }
 
-function syncThemeButton(): void {
+function syncDateVisibility(): void {
+  const el = document.getElementById('clock-date');
+  if (!el) return;
+  el.hidden = !showDate;
+  el.setAttribute('aria-hidden', showDate ? 'false' : 'true');
+}
+
+function updateDateDisplay(now = new Date()): void {
+  const el = document.getElementById('clock-date');
+  if (!el) return;
+  const key = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+  if (key === displayedDateKey && el.textContent) return;
+  const { text, iso } = formatFullDate(now);
+  el.textContent = text;
+  el.setAttribute('datetime', iso);
+  displayedDateKey = key;
+}
+
+function syncThemeControls(): void {
   const btn = document.getElementById('theme-btn');
-  if (!btn) return;
-  const label = THEME_LABELS[colorMode];
-  btn.setAttribute('label', `Theme: ${label}`);
-  btn.setAttribute('aria-label', `Theme ${label}`);
-  btn.dataset.mode = colorMode;
-  btn.innerHTML = msIcon(THEME_ICONS[colorMode]);
+  if (btn) {
+    const label = THEME_LABELS[colorMode];
+    btn.setAttribute('label', `Theme: ${label}`);
+    btn.setAttribute('aria-label', `Theme ${label}`);
+    btn.dataset.mode = colorMode;
+    btn.innerHTML = msIcon(THEME_ICONS[colorMode]);
+  }
+
+  const themeSeg = document.getElementById('theme-seg') as
+    | (HTMLElement & { setSelectedIndices?: (i: number[]) => void })
+    | null;
+  const idx = THEME_CYCLE.indexOf(colorMode);
+  themeSeg?.setSelectedIndices?.(idx >= 0 ? [idx] : [0]);
+}
+
+function syncSeedControls(): void {
+  const picker = document.getElementById('seed-picker') as HTMLInputElement | null;
+  if (picker && picker.value.toUpperCase() !== seedColor) {
+    picker.value = seedColor;
+  }
+  document.querySelectorAll<HTMLElement>('[data-seed]').forEach((el) => {
+    const hex = normalizeHex(el.getAttribute('data-seed'));
+    el.toggleAttribute('aria-pressed', hex === seedColor);
+    el.classList.toggle('is-active', hex === seedColor);
+  });
 }
 
 async function applyThemeFromMode(): Promise<void> {
-  await applyExpressiveTheme(colorMode);
+  await applyExpressiveTheme(colorMode, seedColor);
   document.documentElement.dataset.theme = resolveIsDark(colorMode)
     ? 'dark'
     : 'light';
   document.documentElement.style.colorScheme = resolveIsDark(colorMode)
     ? 'dark'
     : 'light';
-  syncThemeButton();
+  syncThemeControls();
+  syncSeedControls();
+}
+
+async function setSeed(next: string): Promise<void> {
+  const hex = normalizeHex(next);
+  if (!hex || hex === seedColor) {
+    syncSeedControls();
+    return;
+  }
+  seedColor = hex;
+  setStorage('seed', seedColor);
+  await applyThemeFromMode();
 }
 
 async function cycleTheme(): Promise<void> {
@@ -231,6 +310,15 @@ function updateSettings(patch: SettingsPatch): void {
     }
   }
 
+  if (Object.prototype.hasOwnProperty.call(patch, 'date') && patch.date !== undefined) {
+    if (showDate !== patch.date) {
+      showDate = patch.date;
+      setStorage('date', showDate);
+      syncDateVisibility();
+      if (showDate) updateDateDisplay();
+    }
+  }
+
   if (Object.prototype.hasOwnProperty.call(patch, 'anm') && patch.anm !== undefined) {
     requireEl('main-content-area').classList.toggle('fade', patch.anm);
   }
@@ -256,6 +344,10 @@ function updateSettings(patch: SettingsPatch): void {
     setStorage('theme', colorMode);
     void applyThemeFromMode();
   }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'seed') && patch.seed) {
+    void setSeed(patch.seed);
+  }
 }
 
 function loadPersistedSettings(): void {
@@ -271,6 +363,13 @@ function loadPersistedSettings(): void {
     setStorage('bg', showFlaps);
   } else {
     showFlaps = String(storedBg).toLowerCase() === 'true';
+  }
+
+  const storedDate = getStorage('date');
+  if (storedDate === null) {
+    setStorage('date', showDate);
+  } else {
+    showDate = String(storedDate).toLowerCase() === 'true';
   }
 
   const storedBr = getStorage('br');
@@ -294,6 +393,7 @@ function loadPersistedSettings(): void {
   }
 
   colorMode = parseColorMode(getStorage('theme'));
+  seedColor = normalizeHex(getStorage('seed')) ?? SEED;
 }
 
 function applyLoadedSettingsToUi(): void {
@@ -308,7 +408,15 @@ function applyLoadedSettingsToUi(): void {
   if (flaps) flaps.selected = showFlaps;
   requireEl('main-content-area').classList.toggle('dark', !showFlaps);
 
-  syncThemeButton();
+  const dateSw = document.getElementById('show-date') as
+    | (HTMLElement & { selected?: boolean })
+    | null;
+  if (dateSw) dateSw.selected = showDate;
+  syncDateVisibility();
+  updateDateDisplay();
+
+  syncThemeControls();
+  syncSeedControls();
   dispatchBody('_updateBrightness', { value: brightness });
   dispatchBody('_updateScale', { value: scale });
   window.focus();
@@ -319,9 +427,10 @@ function applyLoadedSettingsToUi(): void {
 }
 
 function setHoverTimer(): void {
+  if (settingsOpen) return;
   if (hoverTimer) clearTimeout(hoverTimer);
   hoverTimer = setTimeout(() => {
-    if (!document.body.classList.contains('pause')) {
+    if (!document.body.classList.contains('pause') && !settingsOpen) {
       document.body.classList.remove('hover');
     }
   }, HOVER_HIDE_MS);
@@ -329,76 +438,129 @@ function setHoverTimer(): void {
 
 function clearHoverTimer(): void {
   if (hoverTimer) clearTimeout(hoverTimer);
-  if (!document.body.classList.contains('pause')) {
+  if (!document.body.classList.contains('pause') && !settingsOpen) {
     document.body.classList.remove('hover');
   }
 }
 
 function mountSettingsUi(): void {
-  const main = requireEl('main');
   const segments = JSON.stringify([
     { label: '12', value: '0' },
     { label: '00', value: '1' },
     { label: '0', value: '2' },
   ]);
+  const themeSegments = JSON.stringify([
+    { label: 'Dark', value: 'dark' },
+    { label: 'Light', value: 'light' },
+    { label: 'Auto', value: 'system' },
+  ]);
+  const themeIdx = Math.max(0, THEME_CYCLE.indexOf(colorMode));
+  const presets = SEED_PRESETS.map(
+    (hex) =>
+      `<button type="button" class="seed-preset" data-seed="${hex}" style="--seed:${hex}" aria-label="Seed ${hex}" aria-pressed="false"></button>`,
+  ).join('');
 
-  main.insertAdjacentHTML(
-    'beforebegin',
-    `<div id="settings" role="toolbar" aria-label="Clock settings">
-      <k3-button-segmented
-        id="tf"
-        shape="rounded"
-        aria-label="Hour format"
-        segments='${segments}'
-        selected-indices="[${timeFormat}]"
-      ></k3-button-segmented>
-      <k3-switch id="bg" aria-label="Show flaps" ${showFlaps ? 'selected' : ''}>
-        ${msIcon('view_agenda')}
-      </k3-switch>
-      <k3-icon-button
-        id="theme-btn"
-        variant="standard"
-        size="sm"
-        shape="round"
-        label="Theme"
-      >${msIcon(THEME_ICONS[colorMode])}</k3-icon-button>
-      <k3-slider
-        id="scale"
-        class="settings-slider"
-        size="xs"
-        min="${SCALE_MIN}"
-        max="${SCALE_MAX}"
-        step="1"
-        value="${scale}"
-        label="Scale"
-        aria-label="Scale"
-        value-indicator
-      ></k3-slider>
-      <k3-slider
-        id="brightness"
-        class="settings-slider"
-        size="xs"
-        min="${BRIGHTNESS_MIN}"
-        max="${BRIGHTNESS_MAX}"
-        step="1"
-        value="${brightness}"
-        label="Brightness"
-        aria-label="Brightness"
-        value-indicator
-      ></k3-slider>
-    </div>`,
+  document.body.insertAdjacentHTML(
+    'beforeend',
+    `<k3-fab id="settings-trigger" class="settings-trigger" size="default" variant="primary" aria-label="Open settings">
+      ${msIcon('settings')}
+    </k3-fab>
+    <k3-sheet id="settings-sheet" placement="bottom" width="standard" modal>
+      <span slot="headline">Settings</span>
+      <div class="settings-body">
+        <div class="opt-row">
+          <span class="opt-label">Hour format</span>
+          <k3-button-segmented
+            id="tf"
+            shape="rounded"
+            aria-label="Hour format"
+            segments='${segments}'
+            selected-indices="[${timeFormat}]"
+          ></k3-button-segmented>
+        </div>
+        <div class="opt-row">
+          <span class="opt-label">Show date</span>
+          <k3-switch id="show-date" aria-label="Show date" ${showDate ? 'selected' : ''}></k3-switch>
+        </div>
+        <div class="opt-row">
+          <span class="opt-label">Show flaps</span>
+          <k3-switch id="bg" aria-label="Show flaps" ${showFlaps ? 'selected' : ''}></k3-switch>
+        </div>
+        <div class="opt-row">
+          <span class="opt-label">Theme</span>
+          <k3-button-segmented
+            id="theme-seg"
+            shape="rounded"
+            aria-label="Color theme"
+            segments='${themeSegments}'
+            selected-indices="[${themeIdx}]"
+          ></k3-button-segmented>
+        </div>
+        <div class="opt-block">
+          <span class="opt-label">Primitive color</span>
+          <div class="seed-row">
+            <label class="seed-picker-wrap" title="Pick color">
+              <input id="seed-picker" type="color" value="${seedColor}" aria-label="Primitive color" />
+              ${msIcon('palette')}
+            </label>
+            <div class="seed-presets" role="group" aria-label="Color presets">${presets}</div>
+          </div>
+        </div>
+        <div class="opt-block">
+          <k3-slider
+            id="scale"
+            size="xs"
+            min="${SCALE_MIN}"
+            max="${SCALE_MAX}"
+            step="1"
+            value="${scale}"
+            label="Scale"
+            aria-label="Scale"
+            value-indicator
+          ></k3-slider>
+        </div>
+        <div class="opt-block">
+          <k3-slider
+            id="brightness"
+            size="xs"
+            min="${BRIGHTNESS_MIN}"
+            max="${BRIGHTNESS_MAX}"
+            step="1"
+            value="${brightness}"
+            label="Brightness"
+            aria-label="Brightness"
+            value-indicator
+          ></k3-slider>
+        </div>
+      </div>
+      <k3-button slot="actions" id="settings-done" variant="filled" size="sm">Done</k3-button>
+    </k3-sheet>`,
   );
 
-  const settings = requireEl('settings');
-  for (const type of ['mouseenter', 'mousemove', 'click'] as const) {
-    settings.addEventListener(type, (event) => {
-      event.stopPropagation();
-      document.body.classList.add('pause', 'hover');
+  const sheet = requireEl('settings-sheet') as SheetEl;
+  const trigger = requireEl('settings-trigger');
+
+  const openSheet = (): void => {
+    settingsOpen = true;
+    document.body.classList.add('hover', 'pause', 'settings-open');
+    void sheet.show();
+  };
+  const closeSheet = (): void => {
+    void sheet.hide().then(() => {
+      settingsOpen = false;
+      document.body.classList.remove('pause', 'settings-open');
+      setHoverTimer();
     });
-  }
-  settings.addEventListener('mouseleave', (event) => {
+  };
+
+  trigger.addEventListener('k3-click', (event) => {
     event.stopPropagation();
-    document.body.classList.remove('pause');
+    openSheet();
+  });
+  requireEl('settings-done').addEventListener('k3-click', () => closeSheet());
+  sheet.addEventListener('k3-close-end', () => {
+    settingsOpen = false;
+    document.body.classList.remove('pause', 'settings-open');
     setHoverTimer();
   });
 
@@ -408,6 +570,10 @@ function mountSettingsUi(): void {
     updateSettings({ tf: raw });
   }) as EventListener);
 
+  requireEl('show-date').addEventListener('k3-change', ((event: CustomEvent<SwitchChangeDetail>) => {
+    updateSettings({ date: Boolean(event.detail?.selected) });
+  }) as EventListener);
+
   requireEl('bg').addEventListener('k3-change', ((event: CustomEvent<SwitchChangeDetail>) => {
     updateSettings({
       sb: Boolean(event.detail?.selected),
@@ -415,9 +581,21 @@ function mountSettingsUi(): void {
     });
   }) as EventListener);
 
-  requireEl('theme-btn').addEventListener('k3-click', (event) => {
-    event.stopPropagation();
-    void cycleTheme();
+  requireEl('theme-seg').addEventListener('k3-change', ((event: CustomEvent<SegmentChangeDetail>) => {
+    const value = event.detail?.values?.[0];
+    if (value === 'dark' || value === 'light' || value === 'system') {
+      updateSettings({ theme: value });
+    }
+  }) as EventListener);
+
+  requireEl<HTMLInputElement>('seed-picker').addEventListener('input', (event) => {
+    void setSeed((event.target as HTMLInputElement).value);
+  });
+  document.querySelectorAll<HTMLElement>('[data-seed]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const hex = btn.getAttribute('data-seed');
+      if (hex) void setSeed(hex);
+    });
   });
 
   const scaleEl = requireEl('scale');
@@ -438,7 +616,16 @@ function mountSettingsUi(): void {
     updateSettings({ br: event.detail?.value });
   }) as EventListener);
 
-  syncThemeButton();
+  // Keep cycleTheme available via keyboard for power users (T).
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 't' || event.key === 'T') {
+      if (settingsOpen) return;
+      void cycleTheme();
+    }
+  });
+
+  syncThemeControls();
+  syncSeedControls();
 }
 
 function prepareFlipNodes(): void {
@@ -486,6 +673,8 @@ function bindScaleAndBrightness(): void {
       | null;
     if (slider && slider.value !== value) slider.value = value;
     requireEl('main-content-area').style.filter = `brightness(${value}%)`;
+    const dateEl = document.getElementById('clock-date');
+    if (dateEl) dateEl.style.filter = `brightness(${value}%)`;
   }) as EventListener);
 }
 
@@ -521,6 +710,7 @@ function bindClock(): void {
     const minute = IS_FLIP_TEST ? now.getSeconds() : now.getMinutes();
     const seconds = now.getSeconds();
     const minuteText = formatMinute(minute);
+    updateDateDisplay(now);
 
     if (displayedHour == null || displayedMinute == null) {
       requireEl('main-content-area').classList.add('stop');
@@ -681,15 +871,18 @@ function bindClock(): void {
 
 function bindHoverChrome(): void {
   document.body.addEventListener('mousemove', () => {
+    if (settingsOpen) return;
     document.body.classList.remove('pause');
     document.body.classList.add('hover');
     setHoverTimer();
   });
   document.body.addEventListener('mouseleave', () => {
+    if (settingsOpen) return;
     document.body.classList.remove('pause');
     clearHoverTimer();
   });
   window.addEventListener('blur', () => {
+    if (settingsOpen) return;
     (document.activeElement as HTMLElement | null)?.blur();
     document.body.classList.remove('pause');
     setHoverTimer();

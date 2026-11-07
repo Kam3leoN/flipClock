@@ -5,7 +5,19 @@ export type ColorMode = 'dark' | 'light' | 'system';
 /** Seed — Material expressive violet. */
 export const SEED = '#6750A4';
 
+export const SEED_PRESETS = [
+  '#6750A4',
+  '#006A6A',
+  '#8B5000',
+  '#B3261E',
+  '#1B6EF3',
+  '#386A20',
+] as const;
+
 const SETTINGS_COMPONENTS = [
+  'k3-sheet',
+  'k3-fab',
+  'k3-button',
   'k3-slider',
   'k3-switch',
   'k3-icon-button',
@@ -88,6 +100,17 @@ export function resolveIsDark(mode: ColorMode): boolean {
   return window.matchMedia('(prefers-color-scheme: dark)').matches;
 }
 
+export function normalizeHex(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  let h = raw.trim();
+  if (!h.startsWith('#')) h = `#${h}`;
+  if (/^#[0-9a-fA-F]{3}$/.test(h)) {
+    h = `#${h[1]}${h[1]}${h[2]}${h[2]}${h[3]}${h[3]}`;
+  }
+  if (!/^#[0-9a-fA-F]{6}$/.test(h)) return null;
+  return h.toUpperCase();
+}
+
 /**
  * Apply K3ui Material You Expressive theme (seed + mode).
  * K3ui writes both `--k3-sys-color-*` and `--md-sys-color-*`.
@@ -96,9 +119,10 @@ export async function applyExpressiveTheme(
   mode: ColorMode,
   seed = SEED,
 ): Promise<void> {
+  const hex = normalizeHex(seed) ?? SEED;
   const options: InitOptions = {
     theme: {
-      seed,
+      seed: hex,
       mode,
       variant: 'expressive',
       specVersion: '2025',
