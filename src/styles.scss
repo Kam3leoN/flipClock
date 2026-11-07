@@ -664,11 +664,28 @@ body.settings-open k3-fab-menu.settings-trigger:not([data-k3-overlay-concealed])
   border-color: var(--md-sys-color-primary);
 }
 
-.locale-split {
-  position: fixed !important;
+.chrome-top {
+  position: fixed;
   top: max(1rem, env(safe-area-inset-top, 0px));
   inset-inline-end: max(1rem, env(safe-area-inset-right, 0px));
   z-index: 120;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--md-sys-spacing-space100, 8px);
+  pointer-events: none;
+}
+.chrome-top > * {
+  pointer-events: auto;
+}
+.locale-split {
+  position: relative !important;
+  inset: auto !important;
+}
+.fullscreen-btn .ms,
+.fullscreen-btn [data-k3-icon] {
+  font-size: 1.25rem;
+  line-height: 1;
 }
 
 /* Long locale list — keep panel within the viewport */

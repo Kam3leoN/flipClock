@@ -366,6 +366,39 @@ function syncSheetPlacement(sheet: SheetEl): void {
   }
 }
 
+/** Whether the document is currently fullscreen. */
+function isFullscreen(): boolean {
+  return Boolean(document.fullscreenElement);
+}
+
+/** Sync fullscreen icon-button selected state + a11y label. */
+function syncFullscreenButton(): void {
+  const btn = document.getElementById('fullscreen-btn') as
+    | (HTMLElement & { selected?: boolean; label?: string })
+    | null;
+  if (!btn) return;
+  const on = isFullscreen();
+  if (btn.selected !== on) btn.selected = on;
+  const label = t(on ? 'a11y.fullscreenExit' : 'a11y.fullscreen');
+  btn.label = label;
+  btn.setAttribute('label', label);
+  btn.setAttribute('aria-label', label);
+}
+
+/** Enter or exit browser fullscreen for the FlipFlap window. */
+async function toggleFullscreen(): Promise<void> {
+  try {
+    if (isFullscreen()) {
+      await document.exitFullscreen();
+    } else {
+      await document.documentElement.requestFullscreen();
+    }
+  } catch {
+    /* User gesture / browser policy — ignore */
+  }
+  syncFullscreenButton();
+}
+
 function refreshUiCopy(): void {
   applyI18n(document);
   const headline = document.querySelector('#settings-sheet [slot="headline"]');
@@ -386,6 +419,7 @@ function refreshUiCopy(): void {
   localeBtn?.setAttribute('label', t('lang.label'));
   localeBtn?.setAttribute('aria-label', t('a11y.language'));
   syncLocaleMenuSelected(getLocale());
+  syncFullscreenButton();
 
   const themeSeg = document.getElementById('theme-seg');
   if (themeSeg) {
@@ -693,19 +727,34 @@ function mountChromeUi(): void {
 
   document.body.insertAdjacentHTML(
     'beforeend',
-    `<k3-split-button
-      id="locale-menu"
-      class="locale-split"
-      size="sm"
-      variant="tonal"
-      label="${t('lang.label')}"
-      aria-label="${t('a11y.language')}"
-      data-i18n-label="lang.label"
-      data-i18n-aria="a11y.language"
-    >
-      <span id="locale-menu-flag" class="flag-icon flag-icon--1x1" slot="icon" aria-hidden="true"></span>
-      ${localeItems}
-    </k3-split-button>
+    `<div class="chrome-top" id="chrome-top">
+      <k3-split-button
+        id="locale-menu"
+        class="locale-split"
+        size="sm"
+        variant="tonal"
+        label="${t('lang.label')}"
+        aria-label="${t('a11y.language')}"
+        data-i18n-label="lang.label"
+        data-i18n-aria="a11y.language"
+      >
+        <span id="locale-menu-flag" class="flag-icon flag-icon--1x1" slot="icon" aria-hidden="true"></span>
+        ${localeItems}
+      </k3-split-button>
+      <k3-icon-button
+        id="fullscreen-btn"
+        class="fullscreen-btn"
+        size="sm"
+        variant="tonal"
+        toggle
+        label="${t('a11y.fullscreen')}"
+        aria-label="${t('a11y.fullscreen')}"
+        data-i18n-aria="a11y.fullscreen"
+      >
+        ${msIcon('fullscreen')}
+        <span slot="selected-icon" class="ms notranslate" translate="no" lang="zxx" data-k3-icon="fullscreen_exit" aria-hidden="true"></span>
+      </k3-icon-button>
+    </div>
 
     <k3-fab-menu id="app-fab-menu" class="settings-trigger" fixed size="default" variant="primary" placement="bottom-end" aria-label="${t('menu.open')}" data-i18n-aria="menu.open">
       <span slot="icon" class="ms notranslate" translate="no" lang="zxx" data-k3-icon="menu" aria-hidden="true"></span>
@@ -888,6 +937,12 @@ function mountChromeUi(): void {
     const v = event.detail?.value;
     if (v && isAppLocale(v)) changeLocale(v);
   }) as EventListener);
+
+  requireEl('fullscreen-btn').addEventListener('k3-click', () => {
+    void toggleFullscreen();
+  });
+  document.addEventListener('fullscreenchange', () => syncFullscreenButton());
+  syncFullscreenButton();
 
   requireEl('fab-settings').addEventListener('k3-click', () => openSheet());
   requireEl('fab-flipclock').addEventListener('k3-click', () => {

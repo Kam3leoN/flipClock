@@ -167,6 +167,8 @@ const en: Dict = {
   'a11y.language': 'Choose language',
   'a11y.settings': 'Open settings',
   'a11y.closeSheet': 'Close settings',
+  'a11y.fullscreen': 'Enter fullscreen',
+  'a11y.fullscreenExit': 'Exit fullscreen',
 };
 
 const fr: Dict = {
@@ -184,6 +186,8 @@ const fr: Dict = {
   'opt.showDate': 'Afficher la date',
   'opt.showFlaps': 'Afficher les volets',
   'opt.showCredit': 'Afficher le copyright',
+  'a11y.fullscreen': 'Plein écran',
+  'a11y.fullscreenExit': 'Quitter le plein écran',
   'opt.theme': 'Thème',
   'opt.spec': 'Spécification couleur',
   'opt.variant': 'Variante',
