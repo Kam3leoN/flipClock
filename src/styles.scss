@@ -244,22 +244,39 @@ a {
     background-color: rgba(0, 0, 0, 0.6);
   }
 }
+/* Bottom flap — no brighten flash; expressive overshoot onto the flap behind */
 @keyframes anmBottom {
   0% {
     transform: rotateX(90deg);
-    -webkit-filter: brightness(200%);
-    filter: brightness(200%);
+    filter: brightness(100%);
   }
   100% {
     transform: rotateX(0);
-    -webkit-filter: brightness(100%);
+    filter: brightness(100%);
+  }
+}
+@keyframes anmBottomBounce {
+  0% {
+    transform: rotateX(90deg);
+    filter: brightness(100%);
+  }
+  62% {
+    transform: rotateX(-16deg);
+    filter: brightness(100%);
+  }
+  78% {
+    transform: rotateX(6deg);
+    filter: brightness(100%);
+  }
+  100% {
+    transform: rotateX(0);
     filter: brightness(100%);
   }
 }
 @keyframes anmBottomMS {
   0% {
     transform: rotateX(90deg);
-    color: color-mix(in srgb, var(--md-sys-color-on-surface) 90%, transparent);
+    color: var(--flip-digit);
   }
   100% {
     transform: rotateX(0);
@@ -267,11 +284,9 @@ a {
   }
 }
 @keyframes anmBottomSCR {
-  0% {
-    background-color: rgba(255, 255, 255, 0.05);
-  }
+  0%,
   100% {
-    background-color: rgba(255, 255, 255, 0);
+    background-color: transparent;
   }
 }
 .flips {
@@ -363,7 +378,8 @@ a {
   border-top: solid 1px var(--flip-seam-bottom);
   top: 303px;
   border-radius: 4px 4px 50px 50px;
-  animation-timing-function: ease-out;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation-duration: 0.3s;
 }
 .dark .flip.bottom {
   border-top-color: var(--flip-gap);
@@ -389,11 +405,22 @@ a {
 }
 .flip.bottom.transform {
   display: block;
+  animation-name: anmBottomBounce;
+}
+html[data-motion='standard'] .flip.bottom.transform {
   animation-name: anmBottom;
+  animation-duration: 0.165s;
+  animation-timing-function: ease-out;
 }
 .stop .flip.bottom.transform,
 .stop .flip.top.transform {
   animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .flip.bottom.transform {
+    animation-name: anmBottom;
+    animation-duration: 0.01ms;
+  }
 }
 .flip::before {
   content: "";
@@ -555,11 +582,88 @@ body.settings-open k3-fab-menu.settings-trigger:not([data-k3-overlay-concealed])
   transform: scale(0.8);
 }
 
-.settings-body {
+/* Sheet — keep chrome in viewport; scroll only the body with k3-scroll */
+k3-sheet.settings-sheet::part(container) {
+  max-height: 100dvh;
+  box-sizing: border-box;
+}
+k3-sheet.settings-sheet[placement='bottom']::part(container) {
+  max-height: min(88dvh, calc(100dvh - 1.25rem - env(safe-area-inset-top, 0px)));
+}
+k3-sheet.settings-sheet::part(content) {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+.settings-body.k3-scroll {
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: min(70dvh, calc(100dvh - 10.5rem));
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  --k3-scroll-size: 0.5rem;
+  --k3-scroll-track-inset: 0.5rem;
+  padding-block: var(--md-sys-spacing-space100, 8px);
+  padding-inline-end: 0.125rem;
+}
+k3-sheet.settings-sheet[placement='bottom'] .settings-body.k3-scroll {
+  max-height: min(62dvh, calc(88dvh - 8.5rem));
+}
+.settings-body-inner {
   display: flex;
   flex-direction: column;
   gap: var(--md-sys-spacing-space200, 16px);
-  padding-block: var(--md-sys-spacing-space100, 8px);
+  padding-inline-end: var(--md-sys-spacing-space100, 8px);
+}
+.m2-swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(2.5rem, 1fr));
+  gap: var(--md-sys-spacing-space100, 8px);
+  align-items: center;
+}
+.m2-swatch {
+  box-sizing: border-box;
+  width: 2.5rem;
+  height: 2.5rem;
+  margin: 0;
+  padding: 0;
+  border: 2px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 60%, transparent);
+  border-radius: var(--md-sys-shape-corner-full, 9999px);
+  background: var(--m2-swatch, var(--md-sys-color-primary));
+  color: var(--md-sys-color-on-primary);
+  cursor: pointer;
+  display: inline-grid;
+  place-items: center;
+  transition:
+    transform 160ms cubic-bezier(0.2, 0, 0, 1),
+    box-shadow 160ms cubic-bezier(0.2, 0, 0, 1),
+    border-color 160ms linear;
+}
+.m2-swatch:hover {
+  transform: scale(1.06);
+}
+.m2-swatch:focus-visible {
+  outline: 2px solid var(--md-sys-color-secondary);
+  outline-offset: 2px;
+}
+.m2-swatch.is-selected {
+  border-color: var(--md-sys-color-on-surface);
+  box-shadow:
+    0 0 0 2px var(--md-sys-color-surface),
+    0 0 0 4px var(--md-sys-color-primary);
+}
+.m2-swatch--custom {
+  background: var(--md-sys-color-surface-container-highest);
+  color: var(--md-sys-color-on-surface-variant);
+}
+.m2-swatch--custom .ms,
+.m2-swatch--custom [data-k3-icon] {
+  font-size: 1.25rem;
+  line-height: 1;
 }
 
 .opt-row {
@@ -660,6 +764,9 @@ body.settings-open k3-fab-menu.settings-trigger:not([data-k3-overlay-concealed])
   width: 100%;
 }
 
+#site-credit[hidden] {
+  display: none !important;
+}
 #site-credit {
   position: fixed;
   left: 50%;

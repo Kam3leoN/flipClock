@@ -1,4 +1,4 @@
-# FlipClock
+# FlipFlap
 
 Flip-clock web app with **Material You Expressive** theming (`@material/material-color-utilities`, Spec 2025).
 
@@ -19,12 +19,12 @@ npm run dev
 
 ## Settings
 
-Move the mouse to show the bottom bar:
+Open the FAB menu → Settings:
 
 - Hour format (12h / 24h)
-- Show flaps
-- Theme (system → dark → light)
-- Scale & brightness
+- Show date / flaps / copyright
+- Theme, color spec, variant, M2 palette
+- Motion, scale & brightness
 
 ## Note
 
