@@ -689,8 +689,9 @@ body.settings-open .settings-trigger {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1em;
-  height: 1em;
+  width: 1.15em;
+  height: 1.15em;
+  margin-inline: 0.1em;
   flex: 0 0 auto;
   color: #e53935;
   overflow: visible;
@@ -700,8 +701,10 @@ body.settings-open .settings-trigger {
 
 #site-credit .heart-svg {
   display: block;
-  width: 1em;
-  height: 1em;
+  width: 1.15em;
+  height: 1.15em;
+  min-width: 16px;
+  min-height: 16px;
   overflow: visible;
 }
 

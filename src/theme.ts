@@ -125,14 +125,14 @@ function flipDigitVar(isDark: boolean): void {
       'var(--md-sys-color-surface-container-lowest)',
     );
     root.style.setProperty('--flip-gap', 'var(--md-sys-color-surface)');
-    /* Soft seam — avoid heavy outline on light flaps */
+    /* Soft seam — light mode: avoid a heavy top/bottom hinge stroke */
     root.style.setProperty(
       '--flip-seam-top',
-      'color-mix(in srgb, var(--md-sys-color-outline-variant) 28%, transparent)',
+      'color-mix(in srgb, var(--md-sys-color-on-surface) 10%, transparent)',
     );
     root.style.setProperty(
       '--flip-seam-bottom',
-      'color-mix(in srgb, var(--md-sys-color-outline-variant) 35%, transparent)',
+      'color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent)',
     );
     root.style.setProperty(
       '--flip-shadow',
