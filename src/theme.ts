@@ -6,7 +6,7 @@ import {
   type M2PaletteName,
 } from 'k3ui';
 
-export type ColorMode = 'dark' | 'light' | 'system';
+export type ColorMode = 'dark' | 'light' | 'auto' | 'system';
 export type ColorSpecVersion = '2021' | '2025';
 export type MotionScheme = 'standard' | 'expressive';
 export type ColorVariant =
@@ -22,7 +22,7 @@ export type ColorVariant =
 export type { M2PaletteName };
 export { M2_PALETTE_NAMES, M2_PALETTES };
 
-/** Seed — Material expressive violet (Deep Purple 500). */
+/** Seed — Material Deep Purple 500. */
 export const SEED = '#673AB7';
 
 export const COLOR_VARIANTS: readonly ColorVariant[] = [
@@ -51,6 +51,7 @@ const SETTINGS_COMPONENTS = [
   'k3-sheet',
   'k3-fab-menu',
   'k3-fab-menu-item',
+  'k3-split-button',
   'k3-button',
   'k3-slider',
   'k3-switch',
@@ -65,6 +66,9 @@ export interface ThemeConfig {
   specVersion: ColorSpecVersion;
   motion: MotionScheme;
 }
+
+const AUTO_LIGHT_START = 7;
+const AUTO_LIGHT_END = 18;
 
 function flipDigitVar(isDark: boolean): void {
   const root = document.documentElement;
@@ -92,11 +96,11 @@ function flipDigitVar(isDark: boolean): void {
     root.style.setProperty('--flip-gap', 'var(--md-sys-color-background)');
     root.style.setProperty(
       '--flip-seam-top',
-      'color-mix(in srgb, var(--md-sys-color-outline) 35%, transparent)',
+      'color-mix(in srgb, var(--md-sys-color-outline) 28%, transparent)',
     );
     root.style.setProperty(
       '--flip-seam-bottom',
-      'color-mix(in srgb, var(--md-sys-color-outline-variant) 55%, transparent)',
+      'color-mix(in srgb, var(--md-sys-color-outline-variant) 45%, transparent)',
     );
     root.style.setProperty(
       '--flip-shadow',
@@ -121,25 +125,46 @@ function flipDigitVar(isDark: boolean): void {
       'var(--md-sys-color-surface-container-lowest)',
     );
     root.style.setProperty('--flip-gap', 'var(--md-sys-color-surface)');
+    /* Soft seam — avoid heavy outline on light flaps */
     root.style.setProperty(
       '--flip-seam-top',
-      'color-mix(in srgb, var(--md-sys-color-outline) 45%, transparent)',
+      'color-mix(in srgb, var(--md-sys-color-outline-variant) 28%, transparent)',
     );
     root.style.setProperty(
       '--flip-seam-bottom',
-      'color-mix(in srgb, var(--md-sys-color-outline-variant) 70%, transparent)',
+      'color-mix(in srgb, var(--md-sys-color-outline-variant) 35%, transparent)',
     );
     root.style.setProperty(
       '--flip-shadow',
-      'color-mix(in srgb, var(--md-sys-color-shadow) 18%, transparent)',
+      'color-mix(in srgb, var(--md-sys-color-shadow) 14%, transparent)',
     );
   }
+}
+
+export function resolveAutoByClock(now = new Date()): boolean {
+  const h = now.getHours();
+  return !(h >= AUTO_LIGHT_START && h < AUTO_LIGHT_END);
 }
 
 export function resolveIsDark(mode: ColorMode): boolean {
   if (mode === 'dark') return true;
   if (mode === 'light') return false;
+  if (mode === 'auto') return resolveAutoByClock();
   return window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
+export function msUntilNextAutoSwitch(now = new Date()): number {
+  const next = new Date(now.getTime());
+  next.setSeconds(0, 0);
+  next.setMinutes(0);
+  const h = now.getHours();
+  if (h < AUTO_LIGHT_START) next.setHours(AUTO_LIGHT_START);
+  else if (h < AUTO_LIGHT_END) next.setHours(AUTO_LIGHT_END);
+  else {
+    next.setDate(next.getDate() + 1);
+    next.setHours(AUTO_LIGHT_START);
+  }
+  return Math.max(1000, next.getTime() - now.getTime());
 }
 
 export function normalizeHex(raw: string | null | undefined): string | null {
@@ -167,6 +192,13 @@ export function parseMotionScheme(raw: string | null | undefined): MotionScheme 
   return raw === 'standard' ? 'standard' : 'expressive';
 }
 
+export function parseColorMode(raw: string | null | undefined): ColorMode {
+  if (raw === 'dark' || raw === 'light' || raw === 'auto' || raw === 'system') {
+    return raw;
+  }
+  return 'dark';
+}
+
 export function m2Label(name: M2PaletteName): string {
   return name
     .split('-')
@@ -178,7 +210,6 @@ export function m2SeedHex(name: M2PaletteName): string | null {
   return normalizeHex(M2_PALETTES[name]['500']);
 }
 
-/** Match seed to an M2 500 swatch, else `null` (custom). */
 export function findM2Palette(seed: string): M2PaletteName | null {
   const hex = normalizeHex(seed);
   if (!hex) return null;
@@ -190,7 +221,6 @@ export function findM2Palette(seed: string): M2PaletteName | null {
 
 /**
  * Apply K3ui Material You theme (seed · mode · variant · spec · motion).
- * Writes both `--k3-sys-color-*` and `--md-sys-color-*`.
  */
 export async function applyExpressiveTheme(config: ThemeConfig): Promise<void> {
   const hex = normalizeHex(config.seed) ?? SEED;

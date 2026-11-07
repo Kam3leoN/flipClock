@@ -481,7 +481,7 @@ a {
 
 /* —— Date · settings FAB · sheet (K3ui) —— */
 .ms,
-[data-k3-icon]::before {
+[data-k3-icon] {
   font-family: 'Material Symbols Rounded', 'Material Symbols Outlined', sans-serif;
   font-weight: normal;
   font-style: normal;
@@ -494,11 +494,17 @@ a {
   word-wrap: normal;
   direction: ltr;
   font-feature-settings: 'liga';
+  -webkit-font-feature-settings: 'liga';
   -webkit-font-smoothing: antialiased;
+  speak: never;
 }
 
+.ms::before,
 [data-k3-icon]::before {
   content: attr(data-k3-icon);
+  font-family: inherit;
+  font-feature-settings: 'liga';
+  -webkit-font-feature-settings: 'liga';
 }
 
 #clock-date {
@@ -627,6 +633,33 @@ body.settings-open .settings-trigger {
   letter-spacing: 0.04em;
 }
 
+.locale-split {
+  position: fixed !important;
+  top: max(16px, env(safe-area-inset-top, 0px));
+  right: max(16px, env(safe-area-inset-right, 0px));
+  z-index: 120;
+}
+
+.flag-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 4px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.flag-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.theme-seg {
+  width: 100%;
+}
+
 #site-credit {
   position: fixed;
   left: 50%;
@@ -636,7 +669,7 @@ body.settings-open .settings-trigger {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.35em;
+  gap: 0.4em;
   margin: 0;
   padding: 0 12px;
   max-width: min(96vw, 40rem);
@@ -647,17 +680,29 @@ body.settings-open .settings-trigger {
   color: var(--md-sys-color-on-surface-variant, var(--md-sys-color-on-surface));
   text-align: center;
   white-space: nowrap;
+  overflow: visible;
   pointer-events: none;
   opacity: 0.9;
 }
 
 #site-credit .heart {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1em;
+  height: 1em;
+  flex: 0 0 auto;
   color: #e53935;
-  font-size: 1.05em;
-  line-height: 1;
+  overflow: visible;
   transform-origin: center;
   animation: heartPulse 1.1s ease-in-out infinite;
+}
+
+#site-credit .heart-svg {
+  display: block;
+  width: 1em;
+  height: 1em;
+  overflow: visible;
 }
 
 @keyframes heartPulse {
@@ -677,6 +722,27 @@ body.settings-open .settings-trigger {
   #site-credit .heart {
     animation: none;
   }
+}
+
+.prefs-toast {
+  position: fixed;
+  left: 50%;
+  bottom: max(48px, calc(env(safe-area-inset-bottom, 0px) + 40px));
+  transform: translateX(-50%);
+  z-index: 1300;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: var(--md-sys-color-inverse-surface, #322f35);
+  color: var(--md-sys-color-inverse-on-surface, #f5eff7);
+  font-family: 'Google Sans', system-ui, sans-serif;
+  font-size: 0.875rem;
+  font-weight: 500;
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--md-sys-color-shadow) 30%, transparent);
+  pointer-events: none;
+}
+
+.prefs-toast[hidden] {
+  display: none !important;
 }
 
 #main {

@@ -13,20 +13,20 @@
     <title>FlipClock</title>
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=code,favorite,menu,menu_book,palette,settings,widgets"
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=code,menu,menu_book,palette,settings,widgets"
     />
   </head>
   <body>
-    <div id="loader"></div>
+    <div id="loader" aria-busy="true" aria-live="polite"></div>
     <time id="clock-date" datetime="" hidden></time>
     <div id="main">
       <div id="main-content">
-        <div id="main-content-area">
-          <div class="flips" id="hurs">
+        <div id="main-content-area" role="timer" aria-live="off" aria-atomic="true">
+          <div class="flips" id="hurs" aria-hidden="true">
             <div class="flip hur top"></div>
             <div class="flip bottom hur"></div>
           </div>
-          <div class="flips" id="mins">
+          <div class="flips" id="mins" aria-hidden="true">
             <div class="flip min top"></div>
             <div class="flip bottom min"></div>
           </div>

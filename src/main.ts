@@ -2,13 +2,29 @@ import 'k3ui/k3ui.css';
 import 'k3ui/fonts-ui.css';
 import './styles.scss';
 import {
+  applyI18n,
+  detectLocale,
+  getLocale,
+  isAppLocale,
+  LOCALES,
+  LOCALE_BCP47,
+  LOCALE_NATIVE,
+  setLocale,
+  t,
+  type AppLocale,
+} from './i18n';
+import { HEART_SVG, msIcon, sealLigatures } from './icons';
+import { mountLocaleFlags } from './locale-flags';
+import {
   applyExpressiveTheme,
   COLOR_VARIANTS,
   findM2Palette,
   m2Label,
   m2SeedHex,
   M2_PALETTE_NAMES,
+  msUntilNextAutoSwitch,
   normalizeHex,
+  parseColorMode,
   parseColorVariant,
   parseMotionScheme,
   parseSpecVersion,
@@ -37,6 +53,7 @@ interface SettingsPatch {
   variant?: ColorVariant;
   spec?: ColorSpecVersion;
   motion?: MotionScheme;
+  locale?: AppLocale;
 }
 
 interface FlipDetail {
@@ -78,7 +95,7 @@ const TICK_MS = 250;
 const HOVER_HIDE_MS = 3000;
 const IS_FLIP_TEST = false;
 const PHONE_MQ = '(max-width: 600px)';
-const THEME_CYCLE: ColorMode[] = ['dark', 'light', 'system'];
+const THEME_CYCLE: ColorMode[] = ['dark', 'light', 'auto', 'system'];
 const URL_FLIPCLOCK = 'https://github.com/Kam3leoN/flipClock';
 const URL_K3UI = 'https://github.com/Kam3leoN/k3ui-expressive';
 const URL_K3UI_DOC = 'https://k3ui-expressive.vercel.app';
@@ -99,6 +116,7 @@ let colorVariant: ColorVariant = 'expressive';
 let colorSpec: ColorSpecVersion = '2025';
 let motionScheme: MotionScheme = 'expressive';
 let hoverTimer: ReturnType<typeof setTimeout> | null = null;
+let autoThemeTimer: ReturnType<typeof setTimeout> | null = null;
 let settingsOpen = false;
 
 function setStorage(key: string, value: string | number | boolean): void {
@@ -109,15 +127,25 @@ function getStorage(key: string): string | null {
   return localStorage.getItem(key);
 }
 
+/** Persist every preference currently in memory. */
+function saveAllPreferences(): void {
+  setStorage('tf', timeFormat);
+  setStorage('bg', showFlaps);
+  setStorage('date', showDate);
+  setStorage('br', brightness);
+  setStorage('sc', scale);
+  setStorage('theme', colorMode);
+  setStorage('seed', seedColor);
+  setStorage('variant', colorVariant);
+  setStorage('spec', colorSpec);
+  setStorage('motion', motionScheme);
+  setStorage('locale', getLocale());
+}
+
 function parseTimeFormat(raw: string | number): TimeFormat {
   const n = Number(raw);
   if (n === 1 || n === 2) return n;
   return 0;
-}
-
-function parseColorMode(raw: string | null): ColorMode {
-  if (raw === 'dark' || raw === 'light' || raw === 'system') return raw;
-  return 'dark';
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -168,7 +196,7 @@ function formatMinute(minute: number): string {
 }
 
 function formatFullDate(now: Date): { text: string; iso: string } {
-  const text = new Intl.DateTimeFormat(undefined, {
+  const text = new Intl.DateTimeFormat(LOCALE_BCP47[getLocale()], {
     weekday: 'long',
     year: 'numeric',
     month: 'long',
@@ -216,10 +244,6 @@ function setFlipText(el: Element, text: string | number): void {
   if (span) span.textContent = String(text);
 }
 
-function msIcon(name: string): string {
-  return `<span class="ms notranslate" translate="no" lang="zxx" data-k3-icon="${name}" aria-hidden="true"></span>`;
-}
-
 function syncDateVisibility(): void {
   const el = document.getElementById('clock-date');
   if (!el) return;
@@ -230,7 +254,7 @@ function syncDateVisibility(): void {
 function updateDateDisplay(now = new Date()): void {
   const el = document.getElementById('clock-date');
   if (!el) return;
-  const key = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+  const key = `${getLocale()}-${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
   if (key === displayedDateKey && el.textContent) return;
   const { text, iso } = formatFullDate(now);
   el.textContent = text;
@@ -280,19 +304,26 @@ function syncThemeControls(): void {
   if (picker && picker.value.toUpperCase() !== seedColor) {
     picker.value = seedColor;
   }
-  const customRow = document.getElementById('custom-color-row');
-  customRow?.classList.toggle('is-visible', !m2);
+  document.getElementById('custom-color-row')?.classList.toggle('is-visible', !m2);
+  const hexLabel = document.querySelector('.seed-hex');
+  if (hexLabel) hexLabel.textContent = seedColor;
+}
+
+function scheduleAutoTheme(): void {
+  if (autoThemeTimer) clearTimeout(autoThemeTimer);
+  if (colorMode !== 'auto') return;
+  autoThemeTimer = setTimeout(() => {
+    void applyThemeFromMode().then(scheduleAutoTheme);
+  }, msUntilNextAutoSwitch());
 }
 
 async function applyThemeFromMode(): Promise<void> {
   await applyExpressiveTheme(themeConfig());
-  document.documentElement.dataset.theme = resolveIsDark(colorMode)
-    ? 'dark'
-    : 'light';
-  document.documentElement.style.colorScheme = resolveIsDark(colorMode)
-    ? 'dark'
-    : 'light';
+  const dark = resolveIsDark(colorMode);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
   syncThemeControls();
+  scheduleAutoTheme();
 }
 
 async function setSeed(next: string): Promise<void> {
@@ -315,6 +346,67 @@ function syncSheetPlacement(sheet: SheetEl): void {
     sheet.placement = 'side';
     sheet.side = 'end';
   }
+}
+
+function refreshUiCopy(): void {
+  applyI18n(document);
+  const headline = document.querySelector('#settings-sheet [slot="headline"]');
+  if (headline) headline.textContent = t('settings.title');
+  const done = document.getElementById('settings-done');
+  if (done) done.textContent = t('settings.done');
+
+  const fabSettings = document.getElementById('fab-settings');
+  if (fabSettings) fabSettings.textContent = t('menu.settings');
+  const fabFlip = document.getElementById('fab-flipclock');
+  if (fabFlip) fabFlip.textContent = t('menu.flipclock');
+  const fabK3 = document.getElementById('fab-k3ui');
+  if (fabK3) fabK3.textContent = t('menu.k3ui');
+  const fabDocs = document.getElementById('fab-docs');
+  if (fabDocs) fabDocs.textContent = t('menu.docs');
+
+  const localeBtn = document.getElementById('locale-menu');
+  localeBtn?.setAttribute('label', t('lang.label'));
+  localeBtn?.setAttribute('aria-label', t('a11y.language'));
+
+  const themeSeg = document.getElementById('theme-seg');
+  if (themeSeg) {
+    themeSeg.setAttribute(
+      'segments',
+      JSON.stringify([
+        { label: t('theme.dark'), value: 'dark' },
+        { label: t('theme.light'), value: 'light' },
+        { label: t('theme.auto'), value: 'auto' },
+        { label: t('theme.system'), value: 'system' },
+      ]),
+    );
+    (themeSeg as HTMLElement & { setSelectedIndices?: (i: number[]) => void })
+      .setSelectedIndices?.([Math.max(0, THEME_CYCLE.indexOf(colorMode))]);
+  }
+
+  const motionSeg = document.getElementById('motion-seg');
+  if (motionSeg) {
+    motionSeg.setAttribute(
+      'segments',
+      JSON.stringify([
+        { label: t('motion.standard'), value: 'standard' },
+        { label: t('motion.expressive'), value: 'expressive' },
+      ]),
+    );
+    (motionSeg as HTMLElement & { setSelectedIndices?: (i: number[]) => void })
+      .setSelectedIndices?.(motionScheme === 'standard' ? [0] : [1]);
+  }
+
+  displayedDateKey = undefined;
+  updateDateDisplay();
+  sealLigatures(document);
+  document.title = t('app.title');
+}
+
+function changeLocale(locale: AppLocale): void {
+  setLocale(locale);
+  setStorage('locale', locale);
+  mountLocaleFlags(locale);
+  refreshUiCopy();
 }
 
 function updateSettings(patch: SettingsPatch): void {
@@ -405,9 +497,18 @@ function updateSettings(patch: SettingsPatch): void {
     setStorage('motion', motionScheme);
     void applyThemeFromMode();
   }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'locale') && patch.locale) {
+    changeLocale(patch.locale);
+  }
 }
 
 function loadPersistedSettings(): void {
+  const storedLocale = getStorage('locale');
+  setLocale(
+    storedLocale && isAppLocale(storedLocale) ? storedLocale : detectLocale(),
+  );
+
   const storedTf = getStorage('tf');
   if (storedTf === null || Number.isNaN(Number(storedTf))) {
     setStorage('tf', timeFormat);
@@ -416,18 +517,12 @@ function loadPersistedSettings(): void {
   }
 
   const storedBg = getStorage('bg');
-  if (storedBg === null) {
-    setStorage('bg', showFlaps);
-  } else {
-    showFlaps = String(storedBg).toLowerCase() === 'true';
-  }
+  if (storedBg === null) setStorage('bg', showFlaps);
+  else showFlaps = String(storedBg).toLowerCase() === 'true';
 
   const storedDate = getStorage('date');
-  if (storedDate === null) {
-    setStorage('date', showDate);
-  } else {
-    showDate = String(storedDate).toLowerCase() === 'true';
-  }
+  if (storedDate === null) setStorage('date', showDate);
+  else showDate = String(storedDate).toLowerCase() === 'true';
 
   const storedBr = getStorage('br');
   if (storedBr === null || Number.isNaN(Number(storedBr))) {
@@ -454,6 +549,7 @@ function loadPersistedSettings(): void {
   colorVariant = parseColorVariant(getStorage('variant'));
   colorSpec = parseSpecVersion(getStorage('spec'));
   motionScheme = parseMotionScheme(getStorage('motion'));
+  saveAllPreferences();
 }
 
 function applyLoadedSettingsToUi(): void {
@@ -476,6 +572,7 @@ function applyLoadedSettingsToUi(): void {
   updateDateDisplay();
 
   syncThemeControls();
+  refreshUiCopy();
   dispatchBody('_updateBrightness', { value: brightness });
   dispatchBody('_updateScale', { value: scale });
   window.focus();
@@ -509,17 +606,18 @@ function mountChromeUi(): void {
     { label: '0', value: '2' },
   ]);
   const themeSegments = JSON.stringify([
-    { label: 'Dark', value: 'dark' },
-    { label: 'Light', value: 'light' },
-    { label: 'System', value: 'system' },
+    { label: t('theme.dark'), value: 'dark' },
+    { label: t('theme.light'), value: 'light' },
+    { label: t('theme.auto'), value: 'auto' },
+    { label: t('theme.system'), value: 'system' },
   ]);
   const specSegments = JSON.stringify([
     { label: '2021', value: '2021' },
     { label: '2025', value: '2025' },
   ]);
   const motionSegments = JSON.stringify([
-    { label: 'Standard', value: 'standard' },
-    { label: 'Expressive', value: 'expressive' },
+    { label: t('motion.standard'), value: 'standard' },
+    { label: t('motion.expressive'), value: 'expressive' },
   ]);
   const themeIdx = Math.max(0, THEME_CYCLE.indexOf(colorMode));
   const m2Options = M2_PALETTE_NAMES.map(
@@ -529,77 +627,98 @@ function mountChromeUi(): void {
     (v) => `<k3-menu-item value="${v}">${VARIANT_LABELS[v]}</k3-menu-item>`,
   ).join('');
   const m2Current = findM2Palette(seedColor) ?? 'custom';
+  const localeItems = LOCALES.map(
+    (code) => `<k3-menu-item slot="menu" data-locale="${code}" value="${code}">
+        <span class="flag-icon flag-icon--1x1" slot="icon" data-locale-flag="${code}" aria-hidden="true"></span>
+        ${LOCALE_NATIVE[code]}
+      </k3-menu-item>`,
+  ).join('');
 
   document.body.insertAdjacentHTML(
     'beforeend',
-    `<k3-fab-menu id="app-fab-menu" class="settings-trigger" size="default" variant="primary" placement="bottom-end" aria-label="Menu">
+    `<k3-split-button
+      id="locale-menu"
+      class="locale-split"
+      size="sm"
+      variant="tonal"
+      label="${t('lang.label')}"
+      aria-label="${t('a11y.language')}"
+      data-i18n-label="lang.label"
+      data-i18n-aria="a11y.language"
+    >
+      <span id="locale-menu-flag" class="flag-icon flag-icon--1x1" slot="icon" aria-hidden="true"></span>
+      ${localeItems}
+    </k3-split-button>
+
+    <k3-fab-menu id="app-fab-menu" class="settings-trigger" size="default" variant="primary" placement="bottom-end" aria-label="${t('menu.open')}" data-i18n-aria="menu.open">
       <span slot="icon" class="ms notranslate" translate="no" lang="zxx" data-k3-icon="menu" aria-hidden="true"></span>
-      <k3-fab-menu-item id="fab-settings" icon="settings">Settings</k3-fab-menu-item>
-      <k3-fab-menu-item id="fab-flipclock" icon="code">FlipClock repo</k3-fab-menu-item>
-      <k3-fab-menu-item id="fab-k3ui" icon="widgets">K3ui Expressive</k3-fab-menu-item>
-      <k3-fab-menu-item id="fab-docs" icon="menu_book">K3ui docs</k3-fab-menu-item>
+      <k3-fab-menu-item id="fab-settings" icon="settings">${t('menu.settings')}</k3-fab-menu-item>
+      <k3-fab-menu-item id="fab-flipclock" icon="code">${t('menu.flipclock')}</k3-fab-menu-item>
+      <k3-fab-menu-item id="fab-k3ui" icon="widgets">${t('menu.k3ui')}</k3-fab-menu-item>
+      <k3-fab-menu-item id="fab-docs" icon="menu_book">${t('menu.docs')}</k3-fab-menu-item>
     </k3-fab-menu>
 
-    <k3-sheet id="settings-sheet" placement="side" side="end" modal>
-      <span slot="headline">Settings</span>
+    <k3-sheet id="settings-sheet" placement="side" side="end" modal aria-label="${t('settings.title')}">
+      <span slot="headline" data-i18n="settings.title">${t('settings.title')}</span>
       <div class="settings-body">
         <div class="opt-row">
-          <span class="opt-label">Hour format</span>
+          <span class="opt-label" data-i18n="opt.hourFormat">${t('opt.hourFormat')}</span>
           <k3-button-segmented
             id="tf"
             shape="rounded"
-            aria-label="Hour format"
+            aria-label="${t('opt.hourFormat')}"
             segments='${hourSegments}'
             selected-indices="[${timeFormat}]"
           ></k3-button-segmented>
         </div>
         <div class="opt-row">
-          <span class="opt-label">Show date</span>
-          <k3-switch id="show-date" aria-label="Show date" ${showDate ? 'selected' : ''}></k3-switch>
+          <span class="opt-label" data-i18n="opt.showDate">${t('opt.showDate')}</span>
+          <k3-switch id="show-date" aria-label="${t('opt.showDate')}" ${showDate ? 'selected' : ''}></k3-switch>
         </div>
         <div class="opt-row">
-          <span class="opt-label">Show flaps</span>
-          <k3-switch id="bg" aria-label="Show flaps" ${showFlaps ? 'selected' : ''}></k3-switch>
+          <span class="opt-label" data-i18n="opt.showFlaps">${t('opt.showFlaps')}</span>
+          <k3-switch id="bg" aria-label="${t('opt.showFlaps')}" ${showFlaps ? 'selected' : ''}></k3-switch>
         </div>
 
         <div class="opt-block">
-          <span class="opt-label">Theme</span>
+          <span class="opt-label" data-i18n="opt.theme">${t('opt.theme')}</span>
           <k3-button-segmented
             id="theme-seg"
+            class="theme-seg"
             shape="rounded"
-            aria-label="Color scheme"
+            aria-label="${t('opt.theme')}"
             segments='${themeSegments}'
             selected-indices="[${themeIdx}]"
           ></k3-button-segmented>
         </div>
 
         <div class="opt-block">
-          <span class="opt-label">Color spec</span>
+          <span class="opt-label" data-i18n="opt.spec">${t('opt.spec')}</span>
           <k3-button-segmented
             id="spec-seg"
             shape="rounded"
-            aria-label="Color spec"
+            aria-label="${t('opt.spec')}"
             segments='${specSegments}'
             selected-indices="[${colorSpec === '2021' ? 0 : 1}]"
           ></k3-button-segmented>
         </div>
 
         <div class="opt-block">
-          <span class="opt-label">Variant</span>
-          <k3-select id="variant-select" label="Variant" variant="outlined" value="${colorVariant}">
+          <span class="opt-label" data-i18n="opt.variant">${t('opt.variant')}</span>
+          <k3-select id="variant-select" label="${t('opt.variant')}" variant="outlined" value="${colorVariant}">
             ${variantOptions}
           </k3-select>
         </div>
 
         <div class="opt-block">
-          <span class="opt-label">M2 color</span>
-          <k3-select id="color-select" label="Material color" variant="outlined" value="${m2Current}">
+          <span class="opt-label" data-i18n="opt.m2color">${t('opt.m2color')}</span>
+          <k3-select id="color-select" label="${t('opt.m2color')}" variant="outlined" value="${m2Current}">
             ${m2Options}
-            <k3-menu-item value="custom">Custom…</k3-menu-item>
+            <k3-menu-item value="custom">${t('color.custom')}</k3-menu-item>
           </k3-select>
           <div id="custom-color-row" class="seed-row ${m2Current === 'custom' ? 'is-visible' : ''}">
-            <label class="seed-picker-wrap" title="Pick color">
-              <input id="seed-picker" type="color" value="${seedColor}" aria-label="Custom primitive color" />
+            <label class="seed-picker-wrap" title="${t('opt.customColor')}">
+              <input id="seed-picker" type="color" value="${seedColor}" aria-label="${t('opt.customColor')}" />
               ${msIcon('palette')}
             </label>
             <span class="seed-hex">${seedColor}</span>
@@ -607,11 +726,11 @@ function mountChromeUi(): void {
         </div>
 
         <div class="opt-block">
-          <span class="opt-label">Motion</span>
+          <span class="opt-label" data-i18n="opt.motion">${t('opt.motion')}</span>
           <k3-button-segmented
             id="motion-seg"
             shape="rounded"
-            aria-label="Motion scheme"
+            aria-label="${t('opt.motion')}"
             segments='${motionSegments}'
             selected-indices="[${motionScheme === 'standard' ? 0 : 1}]"
           ></k3-button-segmented>
@@ -625,8 +744,8 @@ function mountChromeUi(): void {
             max="${SCALE_MAX}"
             step="1"
             value="${scale}"
-            label="Scale"
-            aria-label="Scale"
+            label="${t('opt.scale')}"
+            aria-label="${t('opt.scale')}"
             value-indicator
           ></k3-slider>
         </div>
@@ -638,20 +757,21 @@ function mountChromeUi(): void {
             max="${BRIGHTNESS_MAX}"
             step="1"
             value="${brightness}"
-            label="Brightness"
-            aria-label="Brightness"
+            label="${t('opt.brightness')}"
+            aria-label="${t('opt.brightness')}"
             value-indicator
           ></k3-slider>
         </div>
       </div>
-      <k3-button slot="actions" id="settings-done" variant="filled" size="sm">Done</k3-button>
+      <k3-button slot="actions" id="settings-done" variant="filled" size="sm" data-i18n="settings.done">${t('settings.done')}</k3-button>
     </k3-sheet>
 
-    <footer id="site-credit" aria-label="Copyright">
-      <span>2026 &copy; Code &amp; Design with</span>
-      <span class="heart" aria-hidden="true">❤</span>
-      <span>par Kam3leoN</span>
-    </footer>`,
+    <footer id="site-credit" role="contentinfo" aria-label="Copyright">
+      <span data-i18n="credit.before">${t('credit.before')}</span>
+      <span class="heart" aria-hidden="true">${HEART_SVG}</span>
+      <span data-i18n="credit.after">${t('credit.after')}</span>
+    </footer>
+    <div id="prefs-toast" class="prefs-toast" role="status" aria-live="polite" hidden></div>`,
   );
 
   const sheet = requireEl('settings-sheet') as SheetEl;
@@ -660,19 +780,40 @@ function mountChromeUi(): void {
     if (!settingsOpen) syncSheetPlacement(sheet);
   });
 
+  requestAnimationFrame(() => {
+    mountLocaleFlags(getLocale());
+    sealLigatures(document);
+  });
+
   const openSheet = (): void => {
     syncSheetPlacement(sheet);
     settingsOpen = true;
     document.body.classList.add('hover', 'pause', 'settings-open');
     void sheet.show();
   };
-  const closeSheet = (): void => {
+  const closeSheet = (persist = false): void => {
+    if (persist) {
+      saveAllPreferences();
+      const toast = document.getElementById('prefs-toast');
+      if (toast) {
+        toast.hidden = false;
+        toast.textContent = t('settings.saved');
+        window.setTimeout(() => {
+          toast.hidden = true;
+        }, 1800);
+      }
+    }
     void sheet.hide().then(() => {
       settingsOpen = false;
       document.body.classList.remove('pause', 'settings-open');
       setHoverTimer();
     });
   };
+
+  requireEl('locale-menu').addEventListener('k3-select', ((event: CustomEvent<{ value?: string }>) => {
+    const v = event.detail?.value;
+    if (v && isAppLocale(v)) changeLocale(v);
+  }) as EventListener);
 
   requireEl('fab-settings').addEventListener('k3-click', () => openSheet());
   requireEl('fab-flipclock').addEventListener('k3-click', () => {
@@ -685,7 +826,7 @@ function mountChromeUi(): void {
     window.open(URL_K3UI_DOC, '_blank', 'noopener,noreferrer');
   });
 
-  requireEl('settings-done').addEventListener('k3-click', () => closeSheet());
+  requireEl('settings-done').addEventListener('k3-click', () => closeSheet(true));
   sheet.addEventListener('k3-close-end', () => {
     settingsOpen = false;
     document.body.classList.remove('pause', 'settings-open');
@@ -711,16 +852,14 @@ function mountChromeUi(): void {
 
   requireEl('theme-seg').addEventListener('k3-change', ((event: CustomEvent<SegmentChangeDetail>) => {
     const value = event.detail?.values?.[0];
-    if (value === 'dark' || value === 'light' || value === 'system') {
+    if (value === 'dark' || value === 'light' || value === 'auto' || value === 'system') {
       updateSettings({ theme: value });
     }
   }) as EventListener);
 
   requireEl('spec-seg').addEventListener('k3-change', ((event: CustomEvent<SegmentChangeDetail>) => {
     const value = event.detail?.values?.[0];
-    if (value === '2021' || value === '2025') {
-      updateSettings({ spec: value });
-    }
+    if (value === '2021' || value === '2025') updateSettings({ spec: value });
   }) as EventListener);
 
   requireEl('motion-seg').addEventListener('k3-change', ((event: CustomEvent<SegmentChangeDetail>) => {
@@ -731,8 +870,7 @@ function mountChromeUi(): void {
   }) as EventListener);
 
   requireEl('variant-select').addEventListener('k3-change', ((event: CustomEvent<SelectChangeDetail>) => {
-    const value = parseColorVariant(event.detail?.value);
-    updateSettings({ variant: value });
+    updateSettings({ variant: parseColorVariant(event.detail?.value) });
   }) as EventListener);
 
   requireEl('color-select').addEventListener('k3-change', ((event: CustomEvent<SelectChangeDetail>) => {
@@ -747,10 +885,7 @@ function mountChromeUi(): void {
   }) as EventListener);
 
   requireEl<HTMLInputElement>('seed-picker').addEventListener('input', (event) => {
-    const hex = (event.target as HTMLInputElement).value;
-    const label = document.querySelector('.seed-hex');
-    if (label) label.textContent = normalizeHex(hex) ?? hex;
-    void setSeed(hex);
+    void setSeed((event.target as HTMLInputElement).value);
   });
 
   const scaleEl = requireEl('scale');
@@ -772,6 +907,7 @@ function mountChromeUi(): void {
   }) as EventListener);
 
   syncThemeControls();
+  sealLigatures(document);
 }
 
 function prepareFlipNodes(): void {

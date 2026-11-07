@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "flag-icons": "^7.6.0",
     "k3ui": "github:Kam3leoN/k3ui-expressive"
   },
   "devDependencies": {
