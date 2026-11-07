@@ -307,9 +307,8 @@ function syncThemeControls(): void {
   if (variantSel) variantSel.value = colorVariant;
 
   const m2 = findM2Palette(seedColor);
-  const active = m2 ?? 'custom';
   document.querySelectorAll<HTMLButtonElement>('.m2-swatch').forEach((btn) => {
-    const on = btn.dataset.m2 === active;
+    const on = Boolean(m2 && btn.dataset.m2 === m2);
     btn.classList.toggle('is-selected', on);
     btn.setAttribute('aria-pressed', on ? 'true' : 'false');
   });
@@ -318,9 +317,13 @@ function syncThemeControls(): void {
   if (picker && picker.value.toUpperCase() !== seedColor) {
     picker.value = seedColor;
   }
-  document.getElementById('custom-color-row')?.classList.toggle('is-visible', !m2);
-  const hexLabel = document.querySelector('.seed-hex');
-  if (hexLabel) hexLabel.textContent = seedColor;
+  const pickerWrap = document.querySelector('.seed-picker-wrap') as HTMLElement | null;
+  if (pickerWrap) pickerWrap.style.setProperty('--seed-swatch', seedColor);
+
+  const hexInput = document.getElementById('seed-hex') as HTMLInputElement | null;
+  if (hexInput && document.activeElement !== hexInput) {
+    hexInput.value = seedColor;
+  }
 }
 
 function scheduleAutoTheme(): void {
@@ -670,7 +673,7 @@ function mountChromeUi(): void {
     { label: t('motion.expressive'), value: 'expressive' },
   ]);
   const themeIdx = Math.max(0, THEME_CYCLE.indexOf(colorMode));
-  const m2Current = findM2Palette(seedColor) ?? 'custom';
+  const m2Current = findM2Palette(seedColor);
   const m2Swatches = M2_PALETTE_NAMES.map((name) => {
     const hex = m2SeedHex(name) ?? '#000000';
     const on = m2Current === name;
@@ -714,113 +717,121 @@ function mountChromeUi(): void {
 
     <k3-sheet id="settings-sheet" class="settings-sheet" placement="side" side="end" modal aria-label="${t('settings.title')}">
       <span slot="headline" data-i18n="settings.title">${t('settings.title')}</span>
-      <div class="settings-body k3-scroll">
-        <div class="settings-body-inner">
-          <div class="opt-row">
-            <span class="opt-label" data-i18n="opt.hourFormat">${t('opt.hourFormat')}</span>
-            <k3-button-segmented
-              id="tf"
-              shape="rounded"
-              aria-label="${t('opt.hourFormat')}"
-              segments='${hourSegments}'
-              selected-indices="[${timeFormat}]"
-            ></k3-button-segmented>
-          </div>
-          <div class="opt-row">
-            <span class="opt-label" data-i18n="opt.showDate">${t('opt.showDate')}</span>
-            <k3-switch id="show-date" aria-label="${t('opt.showDate')}" ${showDate ? 'selected' : ''}></k3-switch>
-          </div>
-          <div class="opt-row">
-            <span class="opt-label" data-i18n="opt.showFlaps">${t('opt.showFlaps')}</span>
-            <k3-switch id="bg" aria-label="${t('opt.showFlaps')}" ${showFlaps ? 'selected' : ''}></k3-switch>
-          </div>
-          <div class="opt-row">
-            <span class="opt-label" data-i18n="opt.showCredit">${t('opt.showCredit')}</span>
-            <k3-switch id="show-credit" aria-label="${t('opt.showCredit')}" ${showCredit ? 'selected' : ''}></k3-switch>
-          </div>
+      <div class="settings-body">
+        <div class="opt-row">
+          <span class="opt-label" data-i18n="opt.hourFormat">${t('opt.hourFormat')}</span>
+          <k3-button-segmented
+            id="tf"
+            shape="rounded"
+            aria-label="${t('opt.hourFormat')}"
+            segments='${hourSegments}'
+            selected-indices="[${timeFormat}]"
+          ></k3-button-segmented>
+        </div>
+        <div class="opt-row">
+          <span class="opt-label" data-i18n="opt.showDate">${t('opt.showDate')}</span>
+          <k3-switch id="show-date" aria-label="${t('opt.showDate')}" ${showDate ? 'selected' : ''}></k3-switch>
+        </div>
+        <div class="opt-row">
+          <span class="opt-label" data-i18n="opt.showFlaps">${t('opt.showFlaps')}</span>
+          <k3-switch id="bg" aria-label="${t('opt.showFlaps')}" ${showFlaps ? 'selected' : ''}></k3-switch>
+        </div>
+        <div class="opt-row">
+          <span class="opt-label" data-i18n="opt.showCredit">${t('opt.showCredit')}</span>
+          <k3-switch id="show-credit" aria-label="${t('opt.showCredit')}" ${showCredit ? 'selected' : ''}></k3-switch>
+        </div>
 
-          <div class="opt-block">
-            <span class="opt-label" data-i18n="opt.theme">${t('opt.theme')}</span>
-            <k3-button-segmented
-              id="theme-seg"
-              class="theme-seg"
-              shape="rounded"
-              aria-label="${t('opt.theme')}"
-              segments='${themeSegments}'
-              selected-indices="[${themeIdx}]"
-            ></k3-button-segmented>
-          </div>
+        <div class="opt-block">
+          <span class="opt-label" data-i18n="opt.theme">${t('opt.theme')}</span>
+          <k3-button-segmented
+            id="theme-seg"
+            class="theme-seg"
+            shape="rounded"
+            aria-label="${t('opt.theme')}"
+            segments='${themeSegments}'
+            selected-indices="[${themeIdx}]"
+          ></k3-button-segmented>
+        </div>
 
-          <div class="opt-block">
-            <span class="opt-label" data-i18n="opt.spec">${t('opt.spec')}</span>
-            <k3-button-segmented
-              id="spec-seg"
-              shape="rounded"
-              aria-label="${t('opt.spec')}"
-              segments='${specSegments}'
-              selected-indices="[${colorSpec === '2021' ? 0 : 1}]"
-            ></k3-button-segmented>
-          </div>
+        <div class="opt-block">
+          <span class="opt-label" data-i18n="opt.spec">${t('opt.spec')}</span>
+          <k3-button-segmented
+            id="spec-seg"
+            shape="rounded"
+            aria-label="${t('opt.spec')}"
+            segments='${specSegments}'
+            selected-indices="[${colorSpec === '2021' ? 0 : 1}]"
+          ></k3-button-segmented>
+        </div>
 
-          <div class="opt-block">
-            <span class="opt-label" data-i18n="opt.variant">${t('opt.variant')}</span>
-            <k3-select id="variant-select" label="${t('opt.variant')}" variant="outlined" value="${colorVariant}">
-              ${variantOptions}
-            </k3-select>
-          </div>
+        <div class="opt-block">
+          <span class="opt-label" data-i18n="opt.variant">${t('opt.variant')}</span>
+          <k3-select id="variant-select" label="${t('opt.variant')}" variant="outlined" value="${colorVariant}">
+            ${variantOptions}
+          </k3-select>
+        </div>
 
-          <div class="opt-block">
-            <span class="opt-label" data-i18n="opt.m2color">${t('opt.m2color')}</span>
-            <div id="m2-swatches" class="m2-swatches" role="listbox" aria-label="${t('opt.m2color')}">
-              ${m2Swatches}
-              <button type="button" class="m2-swatch m2-swatch--custom${m2Current === 'custom' ? ' is-selected' : ''}" data-m2="custom" title="${t('color.custom')}" aria-label="${t('color.custom')}" aria-pressed="${m2Current === 'custom' ? 'true' : 'false'}">${msIcon('palette')}</button>
-            </div>
-            <div id="custom-color-row" class="seed-row ${m2Current === 'custom' ? 'is-visible' : ''}">
-              <label class="seed-picker-wrap" title="${t('opt.customColor')}">
-                <input id="seed-picker" type="color" value="${seedColor}" aria-label="${t('opt.customColor')}" />
-                ${msIcon('palette')}
-              </label>
-              <span class="seed-hex">${seedColor}</span>
-            </div>
+        <div class="opt-block">
+          <span class="opt-label" data-i18n="opt.m2color">${t('opt.m2color')}</span>
+          <div id="m2-swatches" class="m2-swatches" role="listbox" aria-label="${t('opt.m2color')}">
+            ${m2Swatches}
           </div>
+          <div id="custom-color-row" class="seed-row">
+            <label class="seed-picker-wrap" style="--seed-swatch:${seedColor}" title="${t('opt.customColor')}">
+              <input id="seed-picker" type="color" value="${seedColor}" aria-label="${t('opt.customColor')}" />
+              ${msIcon('palette')}
+            </label>
+            <input
+              id="seed-hex"
+              class="seed-hex-input"
+              type="text"
+              value="${seedColor}"
+              maxlength="7"
+              spellcheck="false"
+              autocomplete="off"
+              autocapitalize="characters"
+              aria-label="${t('opt.customColor')}"
+              inputmode="text"
+            />
+          </div>
+        </div>
 
-          <div class="opt-block">
-            <span class="opt-label" data-i18n="opt.motion">${t('opt.motion')}</span>
-            <k3-button-segmented
-              id="motion-seg"
-              shape="rounded"
-              aria-label="${t('opt.motion')}"
-              segments='${motionSegments}'
-              selected-indices="[${motionScheme === 'standard' ? 0 : 1}]"
-            ></k3-button-segmented>
-          </div>
+        <div class="opt-block">
+          <span class="opt-label" data-i18n="opt.motion">${t('opt.motion')}</span>
+          <k3-button-segmented
+            id="motion-seg"
+            shape="rounded"
+            aria-label="${t('opt.motion')}"
+            segments='${motionSegments}'
+            selected-indices="[${motionScheme === 'standard' ? 0 : 1}]"
+          ></k3-button-segmented>
+        </div>
 
-          <div class="opt-block">
-            <k3-slider
-              id="scale"
-              size="xs"
-              min="${SCALE_MIN}"
-              max="${SCALE_MAX}"
-              step="1"
-              value="${scale}"
-              label="${t('opt.scale')}"
-              aria-label="${t('opt.scale')}"
-              value-indicator
-            ></k3-slider>
-          </div>
-          <div class="opt-block">
-            <k3-slider
-              id="brightness"
-              size="xs"
-              min="${BRIGHTNESS_MIN}"
-              max="${BRIGHTNESS_MAX}"
-              step="1"
-              value="${brightness}"
-              label="${t('opt.brightness')}"
-              aria-label="${t('opt.brightness')}"
-              value-indicator
-            ></k3-slider>
-          </div>
+        <div class="opt-block">
+          <k3-slider
+            id="scale"
+            size="xs"
+            min="${SCALE_MIN}"
+            max="${SCALE_MAX}"
+            step="1"
+            value="${scale}"
+            label="${t('opt.scale')}"
+            aria-label="${t('opt.scale')}"
+            value-indicator
+          ></k3-slider>
+        </div>
+        <div class="opt-block">
+          <k3-slider
+            id="brightness"
+            size="xs"
+            min="${BRIGHTNESS_MIN}"
+            max="${BRIGHTNESS_MAX}"
+            step="1"
+            value="${brightness}"
+            label="${t('opt.brightness')}"
+            aria-label="${t('opt.brightness')}"
+            value-indicator
+          ></k3-slider>
         </div>
       </div>
       <k3-button slot="actions" id="settings-done" variant="filled" size="sm" data-i18n="settings.done">${t('settings.done')}</k3-button>
@@ -945,19 +956,33 @@ function mountChromeUi(): void {
       | HTMLButtonElement
       | null;
     if (!btn?.dataset.m2) return;
-    const value = btn.dataset.m2;
-    if (value === 'custom') {
-      syncThemeControls();
-      document.getElementById('custom-color-row')?.classList.add('is-visible');
-      requireEl('seed-picker').click();
-      return;
-    }
-    const hex = m2SeedHex(value as M2PaletteName);
+    const hex = m2SeedHex(btn.dataset.m2 as M2PaletteName);
     if (hex) void setSeed(hex);
   });
 
   requireEl<HTMLInputElement>('seed-picker').addEventListener('input', (event) => {
     void setSeed((event.target as HTMLInputElement).value);
+  });
+
+  const seedHexInput = requireEl<HTMLInputElement>('seed-hex');
+  const commitHexInput = (): void => {
+    const raw = seedHexInput.value.trim();
+    const hex = normalizeHex(raw.startsWith('#') ? raw : `#${raw}`);
+    if (hex) void setSeed(hex);
+    else seedHexInput.value = seedColor;
+  };
+  seedHexInput.addEventListener('change', commitHexInput);
+  seedHexInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      commitHexInput();
+      seedHexInput.blur();
+    }
+  });
+  seedHexInput.addEventListener('input', () => {
+    const raw = seedHexInput.value.trim();
+    const hex = normalizeHex(raw.startsWith('#') ? raw : `#${raw}`);
+    if (hex) void setSeed(hex);
   });
 
   const scaleEl = requireEl('scale');
