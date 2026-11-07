@@ -6,3 +6,4 @@ dist/
 *.tmp.css
 _raw.*
 index.legacy.html
+.env*
