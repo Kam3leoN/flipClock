@@ -25,7 +25,3 @@ Open the FAB menu → Settings:
 - Show date / flaps / copyright
 - Theme, color spec, variant, M2 palette
 - Motion, scale & brightness
-
-## Note
-
-Visual flip engine adapted from Fliqlo® (© 9031). Material color system © Google (Apache-2.0).

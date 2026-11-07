@@ -253,17 +253,6 @@ a {
   background-color: var(--flip-gap);
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
-  /* Keep GPU layer warm — avoids Chrome white flash on animation start */
-  -webkit-transform: rotateX(0) translateZ(0);
-}
-.flip.clone {
-  display: none;
-}
-.flip.clone.act {
-  display: block;
-}
-.willchange .flip {
-  will-change: transform;
 }
 .fade .flip {
   transition:
@@ -276,9 +265,17 @@ a {
 .flip.min {
   right: 0;
 }
+/*
+ * Clones are never display:none. Toggling display (or will-change) destroys and
+ * re-creates their GPU layers, and Chromium paints that new layer one frame late
+ * → the flash at every flip. Clones stay composited permanently instead:
+ * the top clone rests flat over the top flap (same digit), the bottom clone
+ * rests edge-on at rotateX(90deg) (invisible).
+ */
 .flip.clone {
   z-index: 1;
-  display: none;
+  display: block;
+  will-change: transform;
 }
 .flip.top {
   border-bottom: solid 1px var(--flip-seam-top);
@@ -304,15 +301,12 @@ a {
 }
 .flip.bottom.clone {
   transform-origin: 50% 0;
-  /* Park edge-on before act — avoids 1-frame flash at rotateX(0) */
   transform: rotateX(90deg) translateZ(0);
 }
 .flip.top.transform {
-  display: block;
   animation-name: anmTop;
 }
 .flip.bottom.transform {
-  display: block;
   animation-name: anmBottom;
 }
 /* Expressive: slightly longer decelerate into the lower flap */
@@ -384,10 +378,10 @@ html[data-motion='expressive'] .flip.bottom.transform {
   font-size: 600px;
   line-height: 758px;
   color: var(--flip-digit);
-  /* Avoid subpixel AA flashes during 3D composite */
+  /* No own layer here: a nested layer inside a rotating, rounded overflow clip
+     is re-rasterised by Chromium mid-flip and flashes. */
   -webkit-font-smoothing: antialiased;
   text-rendering: geometricPrecision;
-  transform: translateZ(0);
 }
 .flip.hur.one span {
   text-indent: -0.025em;
