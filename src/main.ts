@@ -649,7 +649,7 @@ function mountChromeUi(): void {
 
     <footer id="site-credit" aria-label="Copyright">
       <span>2026 &copy; Code &amp; Design with</span>
-      <span class="heart" aria-hidden="true">${msIcon('favorite')}</span>
+      <span class="heart" aria-hidden="true">❤</span>
       <span>par Kam3leoN</span>
     </footer>`,
   );
