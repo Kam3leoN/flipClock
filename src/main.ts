@@ -1,4 +1,9 @@
 import './styles.scss';
+import {
+  applyExpressiveTheme,
+  resolveIsDark,
+  type ColorMode,
+} from './theme';
 
 /** Time format: 0 = 12h AM/PM, 1 = 00–23, 2 = 0–23 */
 type TimeFormat = 0 | 1 | 2;
@@ -9,6 +14,7 @@ interface SettingsPatch {
   anm?: boolean;
   br?: number | string;
   sc?: number | string;
+  theme?: ColorMode;
 }
 
 interface FlipDetail {
@@ -23,8 +29,8 @@ const BRIGHTNESS_MIN = 50;
 const TICK_MS = 250;
 const HOVER_HIDE_MS = 3000;
 const IS_FLIP_TEST = false;
-
 const TF_LABELS = ['12', '00', '0'] as const;
+const THEME_CYCLE: ColorMode[] = ['dark', 'light', 'system'];
 
 let displayedHour: number | undefined;
 let displayedMinute: string | undefined;
@@ -34,6 +40,7 @@ let showFlaps = true;
 let scale = SCALE_MAX;
 let orientationScale = 1;
 let brightness = BRIGHTNESS_MAX;
+let colorMode: ColorMode = 'dark';
 let hoverTimer: ReturnType<typeof setTimeout> | null = null;
 
 function setStorage(key: string, value: string | number | boolean): void {
@@ -50,11 +57,15 @@ function parseTimeFormat(raw: string | number): TimeFormat {
   return 0;
 }
 
+function parseColorMode(raw: string | null): ColorMode {
+  if (raw === 'dark' || raw === 'light' || raw === 'system') return raw;
+  return 'dark';
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-/** Digit “1” needs a slight indent in 12h / sparse 24h modes. */
 function isOneDigit(format: TimeFormat, hour: number): boolean {
   return (
     (format === 0 && hour === 1) ||
@@ -63,7 +74,6 @@ function isOneDigit(format: TimeFormat, hour: number): boolean {
   );
 }
 
-/** Digit ending in 1 (11, 21, …) — wider glyph kerning. */
 function isElevenFamily(format: TimeFormat, hour: number): boolean {
   return (
     hour === 11 ||
@@ -133,11 +143,35 @@ function setFlipText(el: Element, text: string | number): void {
   if (span) span.textContent = String(text);
 }
 
+function syncThemeButton(): void {
+  const btn = document.getElementById('theme-container');
+  if (!btn) return;
+  const labels: Record<ColorMode, string> = {
+    system: 'Auto',
+    dark: 'Dark',
+    light: 'Light',
+  };
+  btn.title = `Theme: ${labels[colorMode]}`;
+  btn.setAttribute('aria-label', `Theme ${labels[colorMode]}`);
+  btn.dataset.mode = colorMode;
+}
+
+function applyThemeFromMode(): void {
+  applyExpressiveTheme(resolveIsDark(colorMode));
+  syncThemeButton();
+}
+
+function cycleTheme(): void {
+  const idx = THEME_CYCLE.indexOf(colorMode);
+  colorMode = THEME_CYCLE[(idx + 1) % THEME_CYCLE.length]!;
+  setStorage('theme', colorMode);
+  applyThemeFromMode();
+}
+
 function updateSettings(patch: SettingsPatch): void {
   if (Object.prototype.hasOwnProperty.call(patch, 'tf') && patch.tf !== undefined) {
     const next = parseTimeFormat(patch.tf);
     if (timeFormat !== next) {
-      // Match original: skip immediate dsptf sync when switching 24h↔24h at hour ≥ 10.
       const syncDisplayedFormat = !(
         next > 0 &&
         timeFormat > 0 &&
@@ -185,22 +219,20 @@ function updateSettings(patch: SettingsPatch): void {
       setStorage('sc', scale);
     }
   }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'theme') && patch.theme) {
+    colorMode = patch.theme;
+    setStorage('theme', colorMode);
+    applyThemeFromMode();
+  }
 }
 
-async function initView(): Promise<void> {
+function loadPersistedSettings(): void {
   const storedTf = getStorage('tf');
   if (storedTf === null || Number.isNaN(Number(storedTf))) {
     setStorage('tf', timeFormat);
   } else {
     timeFormat = parseTimeFormat(storedTf);
-  }
-
-  const tfSelect = document.getElementById('tf') as HTMLSelectElement | null;
-  if (tfSelect) {
-    tfSelect.value = String(timeFormat);
-    document
-      .getElementById('tf-container')
-      ?.dispatchEvent(new CustomEvent('_change'));
   }
 
   const storedBg = getStorage('bg');
@@ -209,10 +241,6 @@ async function initView(): Promise<void> {
   } else {
     showFlaps = String(storedBg).toLowerCase() === 'true';
   }
-
-  const bgCheckbox = document.getElementById('bg') as HTMLInputElement | null;
-  if (bgCheckbox && showFlaps) bgCheckbox.checked = true;
-  requireEl('main-content-area').classList.toggle('dark', !showFlaps);
 
   const storedBr = getStorage('br');
   if (storedBr === null || Number.isNaN(Number(storedBr))) {
@@ -223,7 +251,6 @@ async function initView(): Promise<void> {
     brightness = clamped;
     if (clamped !== parsed) setStorage('br', brightness);
   }
-  dispatchBody('_updateBrightness', { value: brightness });
 
   const storedSc = getStorage('sc');
   if (storedSc === null || Number.isNaN(Number(storedSc))) {
@@ -234,8 +261,26 @@ async function initView(): Promise<void> {
     scale = clamped;
     if (clamped !== parsed) setStorage('sc', scale);
   }
-  dispatchBody('_updateScale', { value: scale });
 
+  colorMode = parseColorMode(getStorage('theme'));
+}
+
+function applyLoadedSettingsToUi(): void {
+  const tfSelect = document.getElementById('tf') as HTMLSelectElement | null;
+  if (tfSelect) {
+    tfSelect.value = String(timeFormat);
+    document
+      .getElementById('tf-container')
+      ?.dispatchEvent(new CustomEvent('_change'));
+  }
+
+  const bgCheckbox = document.getElementById('bg') as HTMLInputElement | null;
+  if (bgCheckbox) bgCheckbox.checked = showFlaps;
+  requireEl('main-content-area').classList.toggle('dark', !showFlaps);
+
+  applyThemeFromMode();
+  dispatchBody('_updateBrightness', { value: brightness });
+  dispatchBody('_updateScale', { value: scale });
   window.focus();
   document.body.classList.add('willchange');
   dispatchBody('_updateTime');
@@ -263,10 +308,10 @@ function mountSettingsUi(): void {
   const main = requireEl('main');
   main.insertAdjacentHTML(
     'beforebegin',
-    `<div id="settings"><dl>
+    `<div id="settings" role="toolbar" aria-label="Clock settings"><dl>
       <dt>Hour Format</dt>
       <dd title="Hour Format"><label id="tf-container">
-        <select id="tf" tabindex="-1">
+        <select id="tf" tabindex="0" aria-label="Hour format">
           <option value="0"${timeFormat === 0 ? ' selected' : ''}>&nbsp;1-12 AM/PM&nbsp;</option>
           <option value="1"${timeFormat === 1 ? ' selected' : ''}>&nbsp;00-23&nbsp;</option>
           <option value="2"${timeFormat === 2 ? ' selected' : ''}>&nbsp;0-23&nbsp;</option>
@@ -274,16 +319,20 @@ function mountSettingsUi(): void {
       </label></dd>
       <dt>Show</dt>
       <dd title="Show Flaps" id="bg-container">
-        <input id="bg" type="checkbox" tabindex="-1" />
+        <input id="bg" type="checkbox" tabindex="0" ${showFlaps ? 'checked' : ''} />
         <label for="bg">Show Flaps</label>
+      </dd>
+      <dt>Theme</dt>
+      <dd title="Theme">
+        <button type="button" id="theme-container" tabindex="0"></button>
       </dd>
       <dt>Scale</dt>
       <dd title="Scale"><label id="scale-container">
-        <input id="scale" type="range" min="${SCALE_MIN}" max="${SCALE_MAX}" value="${scale}" step="0.1" tabindex="-1" />
+        <input id="scale" type="range" min="${SCALE_MIN}" max="${SCALE_MAX}" value="${scale}" step="0.1" tabindex="0" aria-label="Scale" />
       </label></dd>
       <dt>Brightness</dt>
       <dd title="Brightness"><label id="brightness-container">
-        <input id="brightness" type="range" min="${BRIGHTNESS_MIN}" max="${BRIGHTNESS_MAX}" value="${brightness}" step="0.1" tabindex="-1" />
+        <input id="brightness" type="range" min="${BRIGHTNESS_MIN}" max="${BRIGHTNESS_MAX}" value="${brightness}" step="0.1" tabindex="0" aria-label="Brightness" />
       </label></dd>
     </dl></div>`,
   );
@@ -292,12 +341,13 @@ function mountSettingsUi(): void {
   for (const type of ['mouseenter', 'mousemove', 'click'] as const) {
     settings.addEventListener(type, (event) => {
       event.stopPropagation();
-      document.body.classList.add('pause');
+      document.body.classList.add('pause', 'hover');
     });
   }
   settings.addEventListener('mouseleave', (event) => {
     event.stopPropagation();
     document.body.classList.remove('pause');
+    setHoverTimer();
   });
 
   const tfSelect = requireEl<HTMLSelectElement>('tf');
@@ -320,6 +370,7 @@ function mountSettingsUi(): void {
     const labels = JSON.parse(this.dataset.disp ?? '[]') as string[];
     this.setAttribute('data-tf', labels[timeFormat] ?? '12');
   });
+  tfContainer.dispatchEvent(new CustomEvent('_change'));
 
   requireEl<HTMLInputElement>('bg').addEventListener('change', (event) => {
     updateSettings({
@@ -328,23 +379,30 @@ function mountSettingsUi(): void {
     });
   });
 
+  requireEl('theme-container').addEventListener('click', (event) => {
+    event.stopPropagation();
+    cycleTheme();
+  });
+
   requireEl<HTMLInputElement>('scale').addEventListener('input', (event) => {
-    dispatchBody('_updateScale', {
-      value: (event.target as HTMLInputElement).value,
-    });
+    const value = (event.target as HTMLInputElement).value;
+    scale = clamp(Number(value), SCALE_MIN, SCALE_MAX);
+    dispatchBody('_updateScale', { value: scale });
   });
   requireEl<HTMLInputElement>('scale').addEventListener('change', (event) => {
     updateSettings({ sc: (event.target as HTMLInputElement).value });
   });
 
   requireEl<HTMLInputElement>('brightness').addEventListener('input', (event) => {
-    dispatchBody('_updateBrightness', {
-      value: (event.target as HTMLInputElement).value,
-    });
+    const value = (event.target as HTMLInputElement).value;
+    brightness = clamp(Number(value), BRIGHTNESS_MIN, BRIGHTNESS_MAX);
+    dispatchBody('_updateBrightness', { value: brightness });
   });
   requireEl<HTMLInputElement>('brightness').addEventListener('change', (event) => {
     updateSettings({ br: (event.target as HTMLInputElement).value });
   });
+
+  syncThemeButton();
 }
 
 function prepareFlipNodes(): void {
@@ -372,6 +430,7 @@ function bindScaleAndBrightness(): void {
       raw == null || Number.isNaN(Number(raw))
         ? scale
         : clamp(Number(raw), SCALE_MIN, SCALE_MAX);
+    scale = value;
     const slider = document.getElementById('scale') as HTMLInputElement | null;
     if (slider && slider.value !== String(value)) slider.value = String(value);
     requireEl('main').style.transform = `scale(${(value / 100) * orientationScale})`;
@@ -383,6 +442,7 @@ function bindScaleAndBrightness(): void {
       raw == null || Number.isNaN(Number(raw))
         ? brightness
         : clamp(Number(raw), BRIGHTNESS_MIN, BRIGHTNESS_MAX);
+    brightness = value;
     const slider = document.getElementById('brightness') as HTMLInputElement | null;
     if (slider && slider.value !== String(value)) slider.value = String(value);
     requireEl('main-content-area').style.filter = `brightness(${value}%)`;
@@ -399,12 +459,17 @@ function bindResize(): void {
     const content = requireEl('main-content');
     const contentW = content.clientWidth;
     const contentH = content.clientHeight;
-    const next =
-      Math.min(shortest / Math.min(contentW, contentH), longest / Math.max(contentW, contentH));
+    const next = Math.min(
+      shortest / Math.min(contentW, contentH),
+      longest / Math.max(contentW, contentH),
+    );
 
     document.body.classList.toggle('portrait', portrait);
     if (orientationScale !== next) {
       orientationScale = next;
+      dispatchBody('_updateScale', { value: scale });
+    } else {
+      // Still apply transform on first layout
       dispatchBody('_updateScale', { value: scale });
     }
   });
@@ -412,14 +477,13 @@ function bindResize(): void {
   window.addEventListener('resize', () => {
     window.dispatchEvent(new CustomEvent('_resize'));
   });
-  window.dispatchEvent(new CustomEvent('_resize'));
 }
 
 function bindClock(): void {
   document.body.addEventListener('_updateTime', () => {
     const now = new Date();
     const hour = now.getHours();
-    let minute = IS_FLIP_TEST ? now.getSeconds() : now.getMinutes();
+    const minute = IS_FLIP_TEST ? now.getSeconds() : now.getMinutes();
     const seconds = now.getSeconds();
     const minuteText = formatMinute(minute);
 
@@ -445,7 +509,11 @@ function bindClock(): void {
       return;
     }
 
-    if (hour !== displayedHour || minuteText !== displayedMinute || timeFormat !== displayedTimeFormat) {
+    if (
+      hour !== displayedHour ||
+      minuteText !== displayedMinute ||
+      timeFormat !== displayedTimeFormat
+    ) {
       if (seconds === 59 && document.body.classList.contains('willchange')) {
         document.body.classList.add('willchange');
       }
@@ -594,10 +662,16 @@ function bindHoverChrome(): void {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  loadPersistedSettings();
+  applyExpressiveTheme(resolveIsDark(colorMode));
+
   mountSettingsUi();
-  void initView();
-  bindHoverChrome();
+  prepareFlipNodes();
   bindScaleAndBrightness();
+  bindClock();
+  bindHoverChrome();
+  bindResize();
+  window.dispatchEvent(new CustomEvent('_resize'));
 
   requireEl('loader').addEventListener(
     'transitionend',
@@ -607,7 +681,12 @@ document.addEventListener('DOMContentLoaded', () => {
     { once: true },
   );
 
-  prepareFlipNodes();
-  bindResize();
-  bindClock();
+  // Listeners are ready — now apply stored values + start clock.
+  applyLoadedSettingsToUi();
+
+  window
+    .matchMedia('(prefers-color-scheme: dark)')
+    .addEventListener('change', () => {
+      if (colorMode === 'system') applyThemeFromMode();
+    });
 });
