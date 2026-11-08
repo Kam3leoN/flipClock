@@ -1,6 +1,8 @@
 /**
- * Airport-style split-flap board — 8 × 24 cells, multi-page rotation, live mode.
+ * Airport-style split-flap board — 8 × 24 PQINA 3D flaps, multi-page rotation, live mode.
  */
+import '../vendor/pqina-flip/flip.css';
+import '../vendor/pqina-flip/flip.min.js';
 import { t } from './i18n';
 import { msIcon, sealLigatures } from './icons';
 
@@ -15,12 +17,17 @@ const LEGACY_KEY = 'flipflap-split-lines';
 const DEFAULT_INTERVAL_SEC = 8;
 const MIN_INTERVAL_SEC = 3;
 const MAX_INTERVAL_SEC = 120;
+/** PQINA flip card duration (ms) — wait before next intermediate step. */
+const FLIP_STEP_MS = 880;
+const LIVE_PRESETS = [
+  { w: 1920, h: 1080 },
+  { w: 2560, h: 1440 },
+] as const;
 
 type FieldEl = HTMLElement & { value: string };
 
 interface Cell {
-  el: HTMLElement;
-  face: HTMLElement;
+  key: string;
   current: string;
   target: string;
   busy: boolean;
@@ -36,10 +43,16 @@ let cells: Cell[][] = [];
 let state: SplitState = { intervalSec: DEFAULT_INTERVAL_SEC, pages: [] };
 let pageIndex = 0;
 let editPageIndex = 0;
-let rotateTimer: ReturnType<typeof setInterval> | null = null;
+let rotateTimer: ReturnType<typeof setTimeout> | null = null;
 let visible = false;
 let live = false;
+let flipping = false;
 let pageRoot: HTMLElement | null = null;
+let tick: TickInstance | null = null;
+let tickRoot: HTMLElement | null = null;
+let pageGen = 0;
+/** Source of truth for concurrent PQINA key updates (avoid stale reads). */
+let livePayload: Record<string, string> = {};
 
 function blankPage(): string[] {
   return Array.from({ length: SPLIT_ROWS }, () => ' '.repeat(SPLIT_COLS));
@@ -130,6 +143,10 @@ function persist(): void {
   }
 }
 
+function cellKey(r: number, c: number): string {
+  return `r${r}c${c}`;
+}
+
 function charsetIndex(ch: string): number {
   const i = SPLIT_CHARSET.indexOf(normalizeChar(ch));
   return i < 0 ? 0 : i;
@@ -147,31 +164,99 @@ function stepsBetween(from: string, to: string): number {
   return (b - a + SPLIT_CHARSET.length) % SPLIT_CHARSET.length;
 }
 
-function paintCell(cell: Cell, ch: string): void {
-  cell.current = ch;
-  cell.face.textContent = ch === ' ' ? '' : ch;
-  cell.el.classList.toggle('is-blank', ch === ' ');
-}
-
-function delay(ms: number, cell: Cell, gen: number): Promise<boolean> {
+function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
-    window.setTimeout(() => resolve(cell.gen === gen), ms);
+    window.setTimeout(resolve, ms);
   });
 }
 
-function flipOnce(cell: Cell, next: string): Promise<void> {
-  return new Promise((resolve) => {
-    cell.el.classList.remove('is-flipping');
-    void cell.el.offsetWidth;
-    cell.el.classList.add('is-flipping');
-    const done = (): void => {
-      cell.el.removeEventListener('animationend', done);
-      paintCell(cell, next);
-      cell.el.classList.remove('is-flipping');
-      resolve();
-    };
-    cell.el.addEventListener('animationend', done);
-    window.setTimeout(done, 160);
+function blankPayload(): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (let r = 0; r < SPLIT_ROWS; r++) {
+    for (let c = 0; c < SPLIT_COLS; c++) {
+      out[cellKey(r, c)] = ' ';
+    }
+  }
+  return out;
+}
+
+function pagePayload(page: string[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (let r = 0; r < SPLIT_ROWS; r++) {
+    const line = page[r] ?? ' '.repeat(SPLIT_COLS);
+    for (let c = 0; c < SPLIT_COLS; c++) {
+      out[cellKey(r, c)] = normalizeChar(line[c] ?? ' ');
+    }
+  }
+  return out;
+}
+
+function setCellValue(key: string, ch: string): void {
+  const next = normalizeChar(ch);
+  livePayload[key] = next;
+  if (tick) tick.value = { ...livePayload };
+}
+
+function applyPayload(payload: Record<string, string>): void {
+  livePayload = { ...payload };
+  if (tick) tick.value = { ...livePayload };
+}
+
+function destroyTick(): void {
+  if (tickRoot) {
+    try {
+      window.Tick.DOM.destroy(tickRoot);
+    } catch {
+      /* already gone */
+    }
+  }
+  tick = null;
+  tickRoot = null;
+}
+
+function buildGrid(host: HTMLElement): void {
+  destroyTick();
+  host.replaceChildren();
+  cells = [];
+
+  const root = document.createElement('div');
+  root.className = 'tick split-tick';
+  root.dataset.credits = 'false';
+  root.setAttribute('aria-hidden', 'true');
+
+  for (let r = 0; r < SPLIT_ROWS; r++) {
+    const row = document.createElement('div');
+    row.className = 'split-row';
+    row.setAttribute('role', 'row');
+    const rowCells: Cell[] = [];
+    for (let c = 0; c < SPLIT_COLS; c++) {
+      const key = cellKey(r, c);
+      const span = document.createElement('span');
+      span.dataset.key = key;
+      span.dataset.view = 'flip';
+      span.dataset.style = 'rounded:panels';
+      span.className = 'split-flip';
+      span.setAttribute('role', 'gridcell');
+      row.appendChild(span);
+      rowCells.push({
+        key,
+        current: ' ',
+        target: ' ',
+        busy: false,
+        gen: 0,
+      });
+    }
+    cells.push(rowCells);
+    root.appendChild(row);
+  }
+
+  host.appendChild(root);
+  tickRoot = root;
+  livePayload = blankPayload();
+  if (!window.Tick?.DOM) return;
+  tick = window.Tick.DOM.create(root, {
+    credits: false,
+    value: { ...livePayload },
   });
 }
 
@@ -181,55 +266,109 @@ async function rotateCellAirport(cell: Cell, targetRaw: string): Promise<void> {
   const gen = ++cell.gen;
   cell.busy = true;
 
+  if (cell.current === target) {
+    cell.busy = false;
+    return;
+  }
+
   const base = stepsBetween(cell.current, target);
+  /* Keep airport feel but cap extras — each step is a full PQINA 3D flip. */
   let remaining =
     base === 0
-      ? Math.random() < 0.12
-        ? SPLIT_CHARSET.length
-        : 0
-      : base + Math.floor(Math.random() * 3) * SPLIT_CHARSET.length + Math.floor(Math.random() * 8);
-
-  const stepMs = 28 + Math.floor(Math.random() * 36);
+      ? 0
+      : Math.min(base, 1 + Math.floor(Math.random() * 3) + Math.floor(Math.random() * 2));
 
   while (remaining > 0) {
     if (cell.gen !== gen) return;
     remaining -= 1;
     const next = remaining === 0 ? target : nextChar(cell.current);
-    await flipOnce(cell, next);
-    if (!(await delay(stepMs, cell, gen))) return;
+    setCellValue(cell.key, next);
+    cell.current = next;
+    await delay(FLIP_STEP_MS);
+    if (cell.gen !== gen) return;
   }
 
   if (cell.gen === gen) {
-    paintCell(cell, target);
+    setCellValue(cell.key, target);
+    cell.current = target;
     cell.busy = false;
+    await delay(FLIP_STEP_MS);
   }
 }
 
-function showPage(index: number, animate: boolean): void {
-  if (!state.pages.length) return;
+function anyCellBusy(): boolean {
+  for (const row of cells) {
+    for (const cell of row) {
+      if (cell.busy) return true;
+    }
+  }
+  return false;
+}
+
+async function showPage(index: number, animate: boolean): Promise<void> {
+  if (!state.pages.length || !tick) return;
+  const gen = ++pageGen;
   pageIndex = ((index % state.pages.length) + state.pages.length) % state.pages.length;
   const page = state.pages[pageIndex] ?? blankPage();
   syncPageIndicator();
 
+  if (!animate) {
+    for (let r = 0; r < SPLIT_ROWS; r++) {
+      const line = page[r] ?? ' '.repeat(SPLIT_COLS);
+      for (let c = 0; c < SPLIT_COLS; c++) {
+        const cell = cells[r]?.[c];
+        if (!cell) continue;
+        cell.gen += 1;
+        cell.busy = false;
+        const ch = normalizeChar(line[c] ?? ' ');
+        cell.current = ch;
+        cell.target = ch;
+      }
+    }
+    applyPayload(pagePayload(page));
+    flipping = false;
+    return;
+  }
+
+  flipping = true;
+  const jobs: Promise<void>[] = [];
   for (let r = 0; r < SPLIT_ROWS; r++) {
     const line = page[r] ?? ' '.repeat(SPLIT_COLS);
     for (let c = 0; c < SPLIT_COLS; c++) {
       const cell = cells[r]?.[c];
       if (!cell) continue;
-      const ch = line[c] ?? ' ';
-      if (!animate) {
-        cell.gen += 1;
-        cell.busy = false;
-        paintCell(cell, ch);
+      const ch = normalizeChar(line[c] ?? ' ');
+      if (cell.current === ch) {
         cell.target = ch;
-      } else {
-        const startDelay = Math.floor(Math.random() * 520) + c * 18 + r * 28;
-        window.setTimeout(() => {
-          void rotateCellAirport(cell, ch);
-        }, startDelay);
+        continue;
       }
+      const startDelay = Math.floor(Math.random() * 420) + c * 16 + r * 24;
+      jobs.push(
+        (async () => {
+          await delay(startDelay);
+          if (gen !== pageGen) return;
+          await rotateCellAirport(cell, ch);
+        })(),
+      );
     }
   }
+
+  await Promise.all(jobs);
+  if (gen !== pageGen) return;
+  /* Safety: settle any stragglers to the page payload. */
+  applyPayload(pagePayload(page));
+  for (let r = 0; r < SPLIT_ROWS; r++) {
+    const line = page[r] ?? ' '.repeat(SPLIT_COLS);
+    for (let c = 0; c < SPLIT_COLS; c++) {
+      const cell = cells[r]?.[c];
+      if (!cell) continue;
+      const ch = normalizeChar(line[c] ?? ' ');
+      cell.current = ch;
+      cell.target = ch;
+      cell.busy = false;
+    }
+  }
+  flipping = false;
 }
 
 function syncPageIndicator(): void {
@@ -242,47 +381,62 @@ function syncPageIndicator(): void {
 
 function stopRotation(): void {
   if (rotateTimer) {
-    clearInterval(rotateTimer);
+    clearTimeout(rotateTimer);
     rotateTimer = null;
   }
 }
 
-function startRotation(): void {
+function scheduleNextPage(): void {
   stopRotation();
   if (!visible || state.pages.length < 2 || state.intervalSec < MIN_INTERVAL_SEC) return;
-  rotateTimer = setInterval(() => {
-    showPage(pageIndex + 1, true);
+  if (flipping || anyCellBusy()) return;
+  rotateTimer = setTimeout(() => {
+    void advancePage();
   }, state.intervalSec * 1000);
 }
 
-function buildGrid(host: HTMLElement): void {
-  host.replaceChildren();
-  cells = [];
-  for (let r = 0; r < SPLIT_ROWS; r++) {
-    const row = document.createElement('div');
-    row.className = 'split-row';
-    row.setAttribute('role', 'row');
-    const rowCells: Cell[] = [];
-    for (let c = 0; c < SPLIT_COLS; c++) {
-      const el = document.createElement('div');
-      el.className = 'split-cell is-blank';
-      el.setAttribute('role', 'gridcell');
-      el.innerHTML = `<span class="split-cell-face" aria-hidden="true"></span>
-        <span class="split-cell-seam" aria-hidden="true"></span>`;
-      const face = el.querySelector('.split-cell-face') as HTMLElement;
-      row.appendChild(el);
-      rowCells.push({
-        el,
-        face,
-        current: ' ',
-        target: ' ',
-        busy: false,
-        gen: 0,
-      });
-    }
-    cells.push(rowCells);
-    host.appendChild(row);
+async function advancePage(): Promise<void> {
+  stopRotation();
+  if (!visible || state.pages.length < 2) return;
+  await showPage(pageIndex + 1, true);
+  if (!visible) return;
+  scheduleNextPage();
+}
+
+function startRotation(): void {
+  scheduleNextPage();
+}
+
+/** Largest preset that fits the viewport; otherwise scale 1920×1080 down. */
+function liveBoardSize(): { w: number; h: number } {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  let best: { w: number; h: number } = LIVE_PRESETS[0];
+  for (const preset of LIVE_PRESETS) {
+    if (preset.w <= vw && preset.h <= vh) best = preset;
   }
+  const scale = Math.min(1, vw / best.w, vh / best.h);
+  return {
+    w: Math.max(1, Math.floor(best.w * scale)),
+    h: Math.max(1, Math.floor(best.h * scale)),
+  };
+}
+
+function applyLiveBoardSize(): void {
+  const stage = pageRoot?.querySelector<HTMLElement>('.split-stage');
+  if (!stage) return;
+  if (!live) {
+    stage.style.removeProperty('--split-live-w');
+    stage.style.removeProperty('--split-live-h');
+    stage.style.removeProperty('width');
+    stage.style.removeProperty('height');
+    return;
+  }
+  const { w, h } = liveBoardSize();
+  stage.style.setProperty('--split-live-w', `${w}px`);
+  stage.style.setProperty('--split-live-h', `${h}px`);
+  stage.style.width = `${w}px`;
+  stage.style.height = `${h}px`;
 }
 
 function fillEditorFields(): void {
@@ -320,8 +474,11 @@ function saveSettingsFromUi(animate: boolean): void {
   state.pages[editPageIndex] = readEditorPageLines();
   persist();
   pageIndex = Math.min(pageIndex, state.pages.length - 1);
-  showPage(pageIndex, animate);
-  startRotation();
+  stopRotation();
+  void (async () => {
+    await showPage(pageIndex, animate);
+    startRotation();
+  })();
 }
 
 function addPage(): void {
@@ -339,8 +496,11 @@ function deletePage(): void {
   pageIndex = Math.min(pageIndex, state.pages.length - 1);
   fillEditorFields();
   persist();
-  showPage(pageIndex, true);
-  startRotation();
+  stopRotation();
+  void (async () => {
+    await showPage(pageIndex, true);
+    startRotation();
+  })();
 }
 
 function selectEditPage(next: number): void {
@@ -364,6 +524,7 @@ function setLive(on: boolean): void {
     if (label) label.textContent = t(on ? 'split.exitLive' : 'split.live');
   }
   if (exitBtn) exitBtn.hidden = !on;
+  applyLiveBoardSize();
   if (on) {
     void document.documentElement.requestFullscreen?.().catch(() => {
       /* optional */
@@ -383,6 +544,10 @@ function onKeydown(event: KeyboardEvent): void {
   }
 }
 
+function onResize(): void {
+  if (live) applyLiveBoardSize();
+}
+
 /** Mount the Split board page with on-page settings + live mode. */
 export function mountSplitPage(page: HTMLElement): {
   show: () => void;
@@ -392,6 +557,8 @@ export function mountSplitPage(page: HTMLElement): {
   pageIndex = 0;
   editPageIndex = 0;
   pageRoot = page;
+  pageGen = 0;
+  flipping = false;
 
   page.innerHTML = `<div class="page-panel split-page">
       <header class="page-header split-header split-chrome">
@@ -456,7 +623,7 @@ export function mountSplitPage(page: HTMLElement): {
   const grid = document.getElementById('split-grid');
   if (grid) buildGrid(grid);
   fillEditorFields();
-  showPage(0, false);
+  void showPage(0, false);
   sealLigatures(page);
 
   document.getElementById('split-apply')?.addEventListener('k3-click', () => saveSettingsFromUi(true));
@@ -479,25 +646,26 @@ export function mountSplitPage(page: HTMLElement): {
   document.getElementById('split-live')?.addEventListener('k3-click', () => setLive(!live));
   document.getElementById('split-live-exit')?.addEventListener('k3-click', () => setLive(false));
   window.addEventListener('keydown', onKeydown);
-  document.addEventListener('fullscreenchange', () => {
-    if (live && !document.fullscreenElement) {
-      /* user exited OS fullscreen — keep live CSS unless they pressed Escape */
-    }
-  });
+  window.addEventListener('resize', onResize);
 
   return {
     show: () => {
       visible = true;
       page.hidden = false;
       fillEditorFields();
-      showPage(pageIndex, true);
-      startRotation();
+      stopRotation();
+      void (async () => {
+        await showPage(pageIndex, true);
+        if (visible) startRotation();
+      })();
     },
     hide: () => {
       visible = false;
       setLive(false);
       page.hidden = true;
       stopRotation();
+      pageGen += 1;
+      flipping = false;
     },
   };
 }

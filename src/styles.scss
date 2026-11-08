@@ -872,14 +872,15 @@ k3-nav-rail:not(:defined) {
   max-height: 600px;
 }
 
-/* —— Split board (airport 8×24) —— */
+/* —— Split board (airport 8×24, PQINA 3D flaps) —— */
 .split-page {
   --split-radius-outer: 12px;
   --split-radius-inner: 6px;
   --split-gap: 3px;
-  --split-cell-bg: var(--flip-face-top, var(--md-sys-color-surface-container-high));
-  --split-cell-fg: var(--flip-digit, var(--md-sys-color-on-surface));
+  --split-seam-gap: 3px;
+  --flip-leaf-h: calc(50% - (var(--split-seam-gap) / 2));
   position: relative;
+  font-family: fliqlo, 'Google Sans', system-ui, sans-serif;
 }
 .split-header {
   display: flex;
@@ -944,7 +945,8 @@ k3-nav-rail:not(:defined) {
   box-sizing: border-box;
   overflow: hidden;
 }
-.split-grid {
+.split-grid,
+.split-tick {
   display: flex;
   flex-direction: column;
   gap: var(--split-gap);
@@ -952,6 +954,10 @@ k3-nav-rail:not(:defined) {
   height: 100%;
   max-width: none;
   flex: 1 1 auto;
+  min-height: 0;
+  color: var(--flip-digit);
+  font-weight: 700;
+  line-height: 1;
 }
 .split-row {
   display: grid;
@@ -959,88 +965,68 @@ k3-nav-rail:not(:defined) {
   gap: var(--split-gap);
   flex: 1 1 0;
   min-height: 0;
+  align-items: stretch;
 }
-.split-cell {
+.split-page .split-flip,
+.split-page .tick-flip {
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 0;
-  min-height: 0;
+  display: block !important;
+  flex: none;
+  margin: 0 !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
   border-radius: var(--split-radius-outer);
-  background: var(--split-cell-bg);
-  color: var(--split-cell-fg);
-  font-family: fliqlo, 'Google Sans', system-ui, sans-serif;
-  font-weight: 700;
-  font-size: clamp(0.7rem, 2.4vw, 1.65rem);
-  line-height: 1;
+  letter-spacing: 0 !important;
+  text-indent: 0 !important;
   overflow: hidden;
-  box-shadow: inset 0 1px rgba(255, 255, 255, 0.06);
-  transform-style: preserve-3d;
-  perspective: 400px;
+  background: #000;
+  box-shadow: 0 0 12px var(--flip-shadow);
+  font-size: clamp(0.65rem, 2.1vw, 1.55rem);
 }
-.split-cell.is-blank {
-  opacity: 0.55;
+.split-page .tick-flip-panel {
+  color: var(--flip-digit);
+  background-color: var(--flip-face-top);
 }
-.split-cell-face {
-  position: relative;
-  z-index: 1;
-  display: block;
-  width: 100%;
-  text-align: center;
-  user-select: none;
+.split-page .tick-flip-panel-back {
+  background-color: var(--flip-face-bottom);
 }
-.split-cell-seam {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 50%;
-  height: 1px;
-  margin-top: -0.5px;
-  background: color-mix(in srgb, var(--md-sys-color-outline) 40%, transparent);
-  z-index: 2;
-  pointer-events: none;
+.split-page .tick-flip-panel-front,
+.split-page .tick-flip-shadow-top {
+  height: 50% !important;
+  top: 0 !important;
+  clip-path: inset(0 0 calc(var(--split-seam-gap) / 2) 0 round var(--split-radius-outer));
 }
-.split-cell-seam::before,
-.split-cell-seam::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 50%;
-  pointer-events: none;
+.split-page .tick-flip-panel-back,
+.split-page .tick-flip-shadow-bottom {
+  height: 50% !important;
+  top: 50% !important;
+  clip-path: inset(calc(var(--split-seam-gap) / 2) 0 0 0 round var(--split-radius-outer));
 }
-.split-cell-seam::before {
-  bottom: 100%;
+.split-page .tick-flip-front,
+.split-page .tick-flip-shadow-top,
+.split-page .tick-flip-panel-front,
+.split-page [data-style*='rounded:panels'] .tick-flip-front,
+.split-page [data-style*='rounded:panels'] .tick-flip-shadow-bottom {
   border-radius: var(--split-radius-outer) var(--split-radius-outer) var(--split-radius-inner)
-    var(--split-radius-inner);
-  box-shadow: inset 0 -1px color-mix(in srgb, var(--md-sys-color-outline-variant) 50%, transparent);
+    var(--split-radius-inner) !important;
 }
-.split-cell-seam::after {
-  top: 100%;
+.split-page .tick-flip-back,
+.split-page .tick-flip-shadow-bottom,
+.split-page .tick-flip-panel-back,
+.split-page .tick-flip-panel-back::after,
+.split-page [data-style*='rounded:panels'] .tick-flip-back,
+.split-page [data-style*='rounded:panels'] .tick-flip-shadow-top,
+.split-page [data-style*='rounded:panels'] .tick-flip-panel-back::after {
   border-radius: var(--split-radius-inner) var(--split-radius-inner) var(--split-radius-outer)
-    var(--split-radius-outer);
+    var(--split-radius-outer) !important;
 }
-.split-cell.is-flipping .split-cell-face {
-  animation: split-flap-spin 0.16s var(--md-sys-motion-easing-emphasized, ease-in) forwards;
+.split-page .tick-flip-panel-front-text .tick-flip-panel-text-wrapper,
+.split-page .tick-flip-panel-back-text .tick-flip-panel-text-wrapper {
+  transform: translateY(0.07em);
 }
-@keyframes split-flap-spin {
-  0% {
-    transform: rotateX(0deg);
-    opacity: 1;
-  }
-  49% {
-    transform: rotateX(-90deg);
-    opacity: 0.35;
-  }
-  50% {
-    transform: rotateX(90deg);
-    opacity: 0.35;
-  }
-  100% {
-    transform: rotateX(0deg);
-    opacity: 1;
-  }
+.split-page .tick-flip-spacer {
+  line-height: 1;
 }
 .split-editor-hint {
   margin: 0;
@@ -1081,7 +1067,7 @@ k3-nav-rail:not(:defined) {
   opacity: 1;
 }
 
-/* Live: only the flaps — 100vw × 100vh, no chrome */
+/* Live: chrome-free; board capped at 1920×1080 or 2560×1440 */
 html.split-live,
 body.split-live {
   overflow: hidden !important;
@@ -1115,25 +1101,37 @@ body.split-live .split-page {
   border: 0 !important;
   background: #000 !important;
   z-index: 10000;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
 }
 body.split-live .split-body {
-  display: block !important;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
   width: 100%;
   height: 100%;
+  margin: 0;
+  padding: 0;
 }
 body.split-live .split-stage {
-  position: absolute !important;
-  inset: 0 !important;
+  position: relative !important;
+  inset: auto !important;
   padding: 0 !important;
-  width: 100% !important;
-  height: 100% !important;
+  width: var(--split-live-w, min(100vw, 1920px)) !important;
+  height: var(--split-live-h, min(100vh, 1080px)) !important;
+  max-width: min(100vw, 2560px);
+  max-height: min(100vh, 1440px);
+  flex: 0 0 auto;
 }
-body.split-live .split-grid {
+body.split-live .split-grid,
+body.split-live .split-tick {
   width: 100%;
   height: 100%;
 }
-body.split-live .split-cell {
-  font-size: clamp(0.85rem, 3.2vw, 2.25rem);
+body.split-live .split-page .tick-flip {
+  font-size: clamp(0.9rem, 2.6vmin, 2.4rem);
+  box-shadow: 0 0 18px var(--flip-shadow);
 }
 @media (max-width: 900px) {
   .split-body {
