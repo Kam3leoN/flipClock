@@ -712,7 +712,8 @@ k3-nav-rail:not(:defined) {
 }
 .page-header {
   flex: 0 0 auto;
-  padding: 1.25rem 1.5rem 0.75rem;
+  /* leave room for fixed locale / fullscreen chrome (top-end) */
+  padding: 1.25rem max(1.5rem, 7.5rem) 0.75rem 1.5rem;
   border-bottom: 1px solid var(--md-sys-color-outline-variant);
 }
 .page-title {
