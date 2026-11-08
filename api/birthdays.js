@@ -16,11 +16,23 @@ const COLLECTION = 'birthdays';
 /** Reuse the client across warm invocations. */
 let clientPromise = globalThis.__flipflapMongo;
 
+/** Ensure Atlas SRV URI has the usual query flags. */
+function normalizeUri(raw) {
+  let uri = String(raw).trim();
+  if (!uri.includes('?')) uri += '/?retryWrites=true&w=majority';
+  else if (!/[?&]retryWrites=/.test(uri)) uri += '&retryWrites=true&w=majority';
+  return uri;
+}
+
 function getCollection() {
-  const uri = process.env.MONGODB_URI;
-  if (!uri) throw Object.assign(new Error('MONGODB_URI is not configured'), { status: 500 });
+  const raw = process.env.MONGODB_URI;
+  if (!raw) throw Object.assign(new Error('MONGODB_URI is not configured'), { status: 500 });
+  const uri = normalizeUri(raw);
   if (!clientPromise) {
-    clientPromise = new MongoClient(uri, { maxPoolSize: 5 }).connect();
+    clientPromise = new MongoClient(uri, {
+      maxPoolSize: 5,
+      serverSelectionTimeoutMS: 10_000,
+    }).connect();
     globalThis.__flipflapMongo = clientPromise;
   }
   return clientPromise.then((c) => c.db(process.env.MONGODB_DB || 'flipflap').collection(COLLECTION));
