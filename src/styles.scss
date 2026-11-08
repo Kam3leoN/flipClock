@@ -753,7 +753,7 @@ k3-nav-rail:not(:defined) {
   font-weight: 700;
 }
 #main-content-area .flipflap-clock.tick {
-  font-size: 520px;
+  font-size: 480px;
   line-height: 1;
   width: 100%;
   height: 100%;
@@ -776,8 +776,8 @@ k3-nav-rail:not(:defined) {
   justify-content: center;
   gap: var(--flip-gap-digit);
   min-width: 0;
-  max-width: 600px;
-  height: 90%;
+  max-width: 560px;
+  height: 82%;
 }
 #main-content-area .tick-flip {
   flex: 1 1 0;
@@ -789,8 +789,9 @@ k3-nav-rail:not(:defined) {
   letter-spacing: 0;
   text-indent: 0;
   box-shadow: 0 0 20px var(--flip-shadow);
-  overflow: visible;
-  background: transparent;
+  overflow: hidden;
+  /* darker than leaves so the 3dp seam reads clearly */
+  background: var(--flip-gap, #000);
 }
 /* 3dp air gap between top / bottom leaves */
 #main-content-area .tick-flip-panel-front,
@@ -818,7 +819,7 @@ k3-nav-rail:not(:defined) {
  */
 #main-content-area .tick-flip-panel-front-text .tick-flip-panel-text-wrapper,
 #main-content-area .tick-flip-panel-back-text .tick-flip-panel-text-wrapper {
-  transform: translateY(0.1em);
+  transform: translateY(0.14em);
 }
 #main-content-area .tick-flip-spacer {
   line-height: 1;
