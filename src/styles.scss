@@ -916,7 +916,9 @@ k3-nav-rail:not(:defined) {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(16rem, 22rem) minmax(0, 1fr);
+  /* Edit mode: settings only — board appears in Live */
+  grid-template-columns: minmax(0, 40rem);
+  justify-content: start;
   gap: 0;
   width: 100%;
 }
@@ -926,8 +928,10 @@ k3-nav-rail:not(:defined) {
   gap: 12px;
   box-sizing: border-box;
   min-height: 0;
-  padding: 0.75rem 1rem 1rem;
-  border-right: 1px solid var(--md-sys-color-outline-variant);
+  width: 100%;
+  max-width: 40rem;
+  padding: 0.75rem 1.5rem 1.5rem;
+  border-right: 0;
   text-align: left;
   overflow: auto;
   --k3ui-field-outlined-notch-bg: var(--md-sys-color-background);
@@ -945,10 +949,10 @@ k3-nav-rail:not(:defined) {
   padding-top: 4px;
 }
 .split-stage {
+  display: none; /* preview only in Live */
   position: relative;
   min-width: 0;
   min-height: 0;
-  display: flex;
   align-items: stretch;
   justify-content: stretch;
   padding: 1rem;
@@ -957,7 +961,7 @@ k3-nav-rail:not(:defined) {
   background: var(--sf-board);
   border: 1.2px solid rgba(255, 255, 255, 0.08);
   border-radius: 18px;
-  margin: 0.75rem 0.75rem 0.75rem 0;
+  margin: 0;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.85);
 }
 .split-grid {
@@ -1232,8 +1236,10 @@ body.split-live .split-body {
   height: 100%;
   margin: 0;
   padding: 0;
+  grid-template-columns: none;
 }
 body.split-live .split-stage {
+  display: flex !important;
   position: relative !important;
   inset: auto !important;
   margin: 0 !important;
@@ -1252,14 +1258,9 @@ body.split-live .split-grid {
 @media (max-width: 900px) {
   .split-body {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(12rem, 38%) minmax(0, 1fr);
   }
   .split-settings {
-    border-right: 0;
-    border-bottom: 1px solid var(--md-sys-color-outline-variant);
-  }
-  .split-stage {
-    margin: 0.5rem;
+    max-width: none;
   }
 }
 

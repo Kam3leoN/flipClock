@@ -396,7 +396,7 @@ function stopRotation(): void {
 
 function scheduleNextPage(): void {
   stopRotation();
-  if (!visible || state.pages.length < 2 || state.intervalSec < MIN_INTERVAL_SEC) return;
+  if (!visible || !live || state.pages.length < 2 || state.intervalSec < MIN_INTERVAL_SEC) return;
   if (flipping || anyCellBusy()) return;
   rotateTimer = setTimeout(() => {
     void advancePage();
@@ -405,9 +405,9 @@ function scheduleNextPage(): void {
 
 async function advancePage(): Promise<void> {
   stopRotation();
-  if (!visible || state.pages.length < 2) return;
+  if (!visible || !live || state.pages.length < 2) return;
   await showPage(pageIndex + 1, true);
-  if (!visible) return;
+  if (!visible || !live) return;
   scheduleNextPage();
 }
 
@@ -475,17 +475,14 @@ function readEditorPageLines(): string[] {
   });
 }
 
-function saveSettingsFromUi(animate: boolean): void {
+function saveSettingsFromUi(_animate: boolean): void {
   const interval = document.getElementById('split-interval') as FieldEl | null;
   state.intervalSec = clampInterval(Number(interval?.value ?? DEFAULT_INTERVAL_SEC));
   state.pages[editPageIndex] = readEditorPageLines();
   persist();
   pageIndex = Math.min(pageIndex, state.pages.length - 1);
-  stopRotation();
-  void (async () => {
-    await showPage(pageIndex, animate);
-    startRotation();
-  })();
+  /* Board only runs in Live — sync silently for next Live entry. */
+  void showPage(pageIndex, false);
 }
 
 function addPage(): void {
@@ -503,11 +500,7 @@ function deletePage(): void {
   pageIndex = Math.min(pageIndex, state.pages.length - 1);
   fillEditorFields();
   persist();
-  stopRotation();
-  void (async () => {
-    await showPage(pageIndex, true);
-    startRotation();
-  })();
+  void showPage(pageIndex, false);
 }
 
 function selectEditPage(next: number): void {
@@ -547,10 +540,23 @@ function setLive(on: boolean): void {
     void document.documentElement.requestFullscreen?.().catch(() => {
       /* optional */
     });
-  } else if (document.fullscreenElement) {
-    void document.exitFullscreen?.().catch(() => {
-      /* optional */
-    });
+    stopRotation();
+    void (async () => {
+      await showPage(pageIndex, true);
+      if (live && visible) startRotation();
+    })();
+  } else {
+    stopRotation();
+    pageGen += 1;
+    flipping = false;
+    activeFlips = 0;
+    stopFlapSound();
+    void showPage(pageIndex, false);
+    if (document.fullscreenElement) {
+      void document.exitFullscreen?.().catch(() => {
+        /* optional */
+      });
+    }
   }
 }
 
@@ -693,7 +699,6 @@ export function mountSplitPage(page: HTMLElement): {
       Number((document.getElementById('split-interval') as FieldEl | null)?.value),
     );
     persist();
-    startRotation();
   });
   document.getElementById('split-live-exit')?.addEventListener('k3-click', () => setLive(false));
   window.addEventListener('keydown', onKeydown);
@@ -708,10 +713,8 @@ export function mountSplitPage(page: HTMLElement): {
       syncLiveChromeLabel();
       fillEditorFields();
       stopRotation();
-      void (async () => {
-        await showPage(pageIndex, true);
-        if (visible) startRotation();
-      })();
+      /* Settings only — board preview starts when Live is pressed. */
+      void showPage(pageIndex, false);
     },
     hide: () => {
       visible = false;
