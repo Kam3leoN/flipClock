@@ -17,9 +17,12 @@
     />
   </head>
   <body>
-    <div class="bandeau gauche" aria-hidden="true"><i></i><i></i><i></i></div>
+    <div id="bandeau-fr" class="bandeau gauche" aria-hidden="true"><i></i><i></i><i></i></div>
     <div id="loader" aria-busy="true" aria-live="polite"></div>
-    <time id="clock-date" datetime="" hidden></time>
+    <div id="clock-meta" class="clock-meta" hidden>
+      <time id="clock-date" datetime=""></time>
+      <p id="clock-saints" class="clock-saints" hidden></p>
+    </div>
     <div id="main">
       <div id="main-content">
         <div id="main-content-area" role="timer" aria-live="off" aria-atomic="true">

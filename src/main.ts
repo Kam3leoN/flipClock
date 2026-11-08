@@ -15,6 +15,7 @@ import {
 } from './i18n';
 import { HEART_SVG, msIcon, sealLigatures } from './icons';
 import { mountLocaleFlags } from './locale-flags';
+import { saintOfDay } from './saints';
 import {
   applyExpressiveTheme,
   COLOR_VARIANTS,
@@ -49,6 +50,8 @@ interface SettingsPatch {
   sc?: number | string;
   theme?: ColorMode;
   date?: boolean;
+  bandeau?: boolean;
+  saints?: boolean;
   credit?: boolean;
   seed?: string;
   variant?: ColorVariant;
@@ -109,6 +112,8 @@ let timeFormat: TimeFormat = 0;
 let displayedTimeFormat: TimeFormat = 0;
 let showFlaps = true;
 let showDate = true;
+let showBandeau = true;
+let showSaints = true;
 let showCredit = true;
 let scale = SCALE_DEFAULT;
 let orientationScale = 1;
@@ -135,6 +140,8 @@ function saveAllPreferences(): void {
   setStorage('tf', timeFormat);
   setStorage('bg', showFlaps);
   setStorage('date', showDate);
+  setStorage('bandeau', showBandeau);
+  setStorage('saints', showSaints);
   setStorage('credit', showCredit);
   setStorage('br', brightness);
   setStorage('sc', scale);
@@ -152,6 +159,23 @@ function syncCreditVisibility(): void {
   if (!el) return;
   el.hidden = !showCredit;
   el.setAttribute('aria-hidden', showCredit ? 'false' : 'true');
+}
+
+/** Sync France tricolor banner visibility. */
+function syncBandeauVisibility(): void {
+  const el = document.getElementById('bandeau-fr');
+  if (!el) return;
+  el.hidden = !showBandeau;
+  el.setAttribute('aria-hidden', showBandeau ? 'false' : 'true');
+}
+
+/** Sync saint-of-the-day line under the date. */
+function syncSaintsVisibility(): void {
+  const el = document.getElementById('clock-saints');
+  if (!el) return;
+  const visible = showDate && showSaints;
+  el.hidden = !visible;
+  el.setAttribute('aria-hidden', visible ? 'false' : 'true');
 }
 
 function parseTimeFormat(raw: string | number): TimeFormat {
@@ -257,20 +281,33 @@ function setFlipText(el: Element, text: string | number): void {
 }
 
 function syncDateVisibility(): void {
+  const meta = document.getElementById('clock-meta');
   const el = document.getElementById('clock-date');
-  if (!el) return;
-  el.hidden = !showDate;
-  el.setAttribute('aria-hidden', showDate ? 'false' : 'true');
+  if (meta) {
+    meta.hidden = !showDate;
+    meta.setAttribute('aria-hidden', showDate ? 'false' : 'true');
+  }
+  if (el) {
+    el.hidden = !showDate;
+    el.setAttribute('aria-hidden', showDate ? 'false' : 'true');
+  }
+  syncSaintsVisibility();
 }
 
 function updateDateDisplay(now = new Date()): void {
   const el = document.getElementById('clock-date');
+  const saintsEl = document.getElementById('clock-saints');
   if (!el) return;
   const key = `${getLocale()}-${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
-  if (key === displayedDateKey && el.textContent) return;
+  const saint = saintOfDay(now);
+  if (key === displayedDateKey && el.textContent) {
+    if (saintsEl && showSaints) saintsEl.textContent = saint;
+    return;
+  }
   const { text, iso } = formatFullDate(now);
   el.textContent = text;
   el.setAttribute('datetime', iso);
+  if (saintsEl) saintsEl.textContent = saint;
   displayedDateKey = key;
 }
 
@@ -518,6 +555,23 @@ function updateSettings(patch: SettingsPatch): void {
     }
   }
 
+  if (Object.prototype.hasOwnProperty.call(patch, 'bandeau') && patch.bandeau !== undefined) {
+    if (showBandeau !== patch.bandeau) {
+      showBandeau = patch.bandeau;
+      setStorage('bandeau', showBandeau);
+      syncBandeauVisibility();
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'saints') && patch.saints !== undefined) {
+    if (showSaints !== patch.saints) {
+      showSaints = patch.saints;
+      setStorage('saints', showSaints);
+      syncSaintsVisibility();
+      if (showSaints) updateDateDisplay();
+    }
+  }
+
   if (Object.prototype.hasOwnProperty.call(patch, 'credit') && patch.credit !== undefined) {
     if (showCredit !== patch.credit) {
       showCredit = patch.credit;
@@ -600,6 +654,14 @@ function loadPersistedSettings(): void {
   if (storedDate === null) setStorage('date', showDate);
   else showDate = String(storedDate).toLowerCase() === 'true';
 
+  const storedBandeau = getStorage('bandeau');
+  if (storedBandeau === null) setStorage('bandeau', showBandeau);
+  else showBandeau = String(storedBandeau).toLowerCase() === 'true';
+
+  const storedSaints = getStorage('saints');
+  if (storedSaints === null) setStorage('saints', showSaints);
+  else showSaints = String(storedSaints).toLowerCase() === 'true';
+
   const storedCredit = getStorage('credit');
   if (storedCredit === null) setStorage('credit', showCredit);
   else showCredit = String(storedCredit).toLowerCase() === 'true';
@@ -651,6 +713,18 @@ function applyLoadedSettingsToUi(): void {
   if (dateSw) dateSw.selected = showDate;
   syncDateVisibility();
   updateDateDisplay();
+
+  const bandeauSw = document.getElementById('show-bandeau') as
+    | (HTMLElement & { selected?: boolean })
+    | null;
+  if (bandeauSw) bandeauSw.selected = showBandeau;
+  syncBandeauVisibility();
+
+  const saintsSw = document.getElementById('show-saints') as
+    | (HTMLElement & { selected?: boolean })
+    | null;
+  if (saintsSw) saintsSw.selected = showSaints;
+  syncSaintsVisibility();
 
   const creditSw = document.getElementById('show-credit') as
     | (HTMLElement & { selected?: boolean })
@@ -777,18 +851,26 @@ function mountChromeUi(): void {
             selected-indices="[${timeFormat}]"
           ></k3-button-segmented>
         </div>
-        <div class="opt-row">
-          <span class="opt-label" data-i18n="opt.showDate">${t('opt.showDate')}</span>
-          <k3-switch id="show-date" aria-label="${t('opt.showDate')}" ${showDate ? 'selected' : ''}></k3-switch>
-        </div>
-        <div class="opt-row">
-          <span class="opt-label" data-i18n="opt.showFlaps">${t('opt.showFlaps')}</span>
-          <k3-switch id="bg" aria-label="${t('opt.showFlaps')}" ${showFlaps ? 'selected' : ''}></k3-switch>
-        </div>
-        <div class="opt-row">
-          <span class="opt-label" data-i18n="opt.showCredit">${t('opt.showCredit')}</span>
-          <k3-switch id="show-credit" aria-label="${t('opt.showCredit')}" ${showCredit ? 'selected' : ''}></k3-switch>
-        </div>
+          <div class="opt-row">
+            <span class="opt-label" data-i18n="opt.showDate">${t('opt.showDate')}</span>
+            <k3-switch id="show-date" aria-label="${t('opt.showDate')}" ${showDate ? 'selected' : ''}></k3-switch>
+          </div>
+          <div class="opt-row">
+            <span class="opt-label" data-i18n="opt.showSaints">${t('opt.showSaints')}</span>
+            <k3-switch id="show-saints" aria-label="${t('opt.showSaints')}" ${showSaints ? 'selected' : ''}></k3-switch>
+          </div>
+          <div class="opt-row">
+            <span class="opt-label" data-i18n="opt.showFlaps">${t('opt.showFlaps')}</span>
+            <k3-switch id="bg" aria-label="${t('opt.showFlaps')}" ${showFlaps ? 'selected' : ''}></k3-switch>
+          </div>
+          <div class="opt-row">
+            <span class="opt-label" data-i18n="opt.showBandeau">${t('opt.showBandeau')}</span>
+            <k3-switch id="show-bandeau" aria-label="${t('opt.showBandeau')}" ${showBandeau ? 'selected' : ''}></k3-switch>
+          </div>
+          <div class="opt-row">
+            <span class="opt-label" data-i18n="opt.showCredit">${t('opt.showCredit')}</span>
+            <k3-switch id="show-credit" aria-label="${t('opt.showCredit')}" ${showCredit ? 'selected' : ''}></k3-switch>
+          </div>
 
         <div class="opt-block">
           <span class="opt-label" data-i18n="opt.theme">${t('opt.theme')}</span>
@@ -970,6 +1052,14 @@ function mountChromeUi(): void {
 
   requireEl('show-date').addEventListener('k3-change', ((event: CustomEvent<SwitchChangeDetail>) => {
     updateSettings({ date: Boolean(event.detail?.selected) });
+  }) as EventListener);
+
+  requireEl('show-saints').addEventListener('k3-change', ((event: CustomEvent<SwitchChangeDetail>) => {
+    updateSettings({ saints: Boolean(event.detail?.selected) });
+  }) as EventListener);
+
+  requireEl('show-bandeau').addEventListener('k3-change', ((event: CustomEvent<SwitchChangeDetail>) => {
+    updateSettings({ bandeau: Boolean(event.detail?.selected) });
   }) as EventListener);
 
   requireEl('show-credit').addEventListener('k3-change', ((event: CustomEvent<SwitchChangeDetail>) => {
