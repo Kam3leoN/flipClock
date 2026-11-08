@@ -1016,12 +1016,13 @@ k3-nav-rail:not(:defined) {
   margin: 0;
   padding: 0;
   color: var(--sf-text);
-  font-family: 'Courier New', Courier, ui-monospace, monospace;
-  font-weight: 700;
-  font-size: 72cqh; /* fills flap like the Flutter reference (unitHeight * 0.72) */
+  font-family: 'Bebas Neue', 'BebasNeue', sans-serif;
+  font-weight: 400;
+  font-size: 78cqh; /* Bebas Neue is condensed — fill flap height */
   line-height: 1;
-  letter-spacing: 0;
+  letter-spacing: 0.02em;
   text-indent: 0;
+  text-transform: uppercase;
   user-select: none;
   pointer-events: none;
 }

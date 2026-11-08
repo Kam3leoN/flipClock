@@ -2,6 +2,13 @@
  * Airport Solari split-flap board (style: flip-flap-display / mechanical flaps).
  * 8 × 24 cells, multi-page rotation, live mode. Not PQINA — true hinge flip + charset cascade.
  */
+import {
+  initFlapSound,
+  playFlapClick,
+  setFlapActivity,
+  stopFlapSound,
+  unlockFlapSound,
+} from './flap-sound';
 import { t } from './i18n';
 import { msIcon, sealLigatures } from './icons';
 
@@ -53,6 +60,12 @@ let flipping = false;
 let pageRoot: HTMLElement | null = null;
 let pageGen = 0;
 let liveChromeBtn: HTMLElement | null = null;
+let activeFlips = 0;
+
+function bumpActivity(delta: number): void {
+  activeFlips = Math.max(0, activeFlips + delta);
+  setFlapActivity(activeFlips);
+}
 
 function blankPage(): string[] {
   return Array.from({ length: SPLIT_ROWS }, () => ' '.repeat(SPLIT_COLS));
@@ -194,6 +207,7 @@ function flipOnce(cell: Cell, from: string, to: string): Promise<void> {
     cell.swing.hidden = false;
     cell.swing.classList.add('is-flipping');
     cell.root.classList.add('is-flipping');
+    playFlapClick();
 
     const done = (): void => {
       cell.swing.removeEventListener('animationend', done);
@@ -224,18 +238,23 @@ async function rotateCellAirport(cell: Cell, targetRaw: string): Promise<void> {
   if (remaining === 0) remaining = SPLIT_CHARSET.length;
   remaining = Math.min(remaining, SPLIT_CHARSET.length);
 
-  while (remaining > 0) {
-    if (cell.gen !== gen) return;
-    remaining -= 1;
-    const from = cell.current;
-    const next = remaining === 0 ? target : nextChar(from);
-    await flipOnce(cell, from, next);
-    if (cell.gen !== gen) return;
-  }
+  bumpActivity(1);
+  try {
+    while (remaining > 0) {
+      if (cell.gen !== gen) return;
+      remaining -= 1;
+      const from = cell.current;
+      const next = remaining === 0 ? target : nextChar(from);
+      await flipOnce(cell, from, next);
+      if (cell.gen !== gen) return;
+    }
 
-  if (cell.gen === gen) {
-    paintStatic(cell, target);
-    cell.busy = false;
+    if (cell.gen === gen) {
+      paintStatic(cell, target);
+      cell.busy = false;
+    }
+  } finally {
+    bumpActivity(-1);
   }
 }
 
@@ -318,6 +337,8 @@ async function showPage(index: number, animate: boolean): Promise<void> {
   }
 
   flipping = true;
+  activeFlips = 0;
+  setFlapActivity(0);
   const jobs: Promise<void>[] = [];
   for (let r = 0; r < SPLIT_ROWS; r++) {
     const line = page[r] ?? ' '.repeat(SPLIT_COLS);
@@ -353,6 +374,8 @@ async function showPage(index: number, animate: boolean): Promise<void> {
       cell.busy = false;
     }
   }
+  activeFlips = 0;
+  setFlapActivity(0);
   flipping = false;
 }
 
@@ -520,6 +543,7 @@ function setLive(on: boolean): void {
   syncLiveChromeLabel();
   applyLiveBoardSize();
   if (on) {
+    unlockFlapSound();
     void document.documentElement.requestFullscreen?.().catch(() => {
       /* optional */
     });
@@ -561,7 +585,10 @@ function ensureLiveChromeButton(): void {
     } else {
       chrome.insertBefore(btn, chrome.firstChild);
     }
-    btn.addEventListener('k3-click', () => setLive(!live));
+    btn.addEventListener('k3-click', () => {
+      unlockFlapSound();
+      setLive(!live);
+    });
     sealLigatures(btn);
   }
   liveChromeBtn = btn;
@@ -642,10 +669,16 @@ export function mountSplitPage(page: HTMLElement): {
   if (grid) buildGrid(grid);
   fillEditorFields();
   ensureLiveChromeButton();
+  void initFlapSound();
   void showPage(0, false);
   sealLigatures(page);
 
-  document.getElementById('split-apply')?.addEventListener('k3-click', () => saveSettingsFromUi(true));
+  const unlockOnGesture = (): void => unlockFlapSound();
+  page.addEventListener('pointerdown', unlockOnGesture, { once: true });
+  document.getElementById('split-apply')?.addEventListener('k3-click', () => {
+    unlockFlapSound();
+    saveSettingsFromUi(true);
+  });
   document.getElementById('split-page-add')?.addEventListener('k3-click', () => addPage());
   document.getElementById('split-page-delete')?.addEventListener('k3-click', () => deletePage());
   document.getElementById('split-page-select')?.addEventListener(
@@ -688,6 +721,8 @@ export function mountSplitPage(page: HTMLElement): {
       stopRotation();
       pageGen += 1;
       flipping = false;
+      activeFlips = 0;
+      stopFlapSound();
     },
   };
 }
