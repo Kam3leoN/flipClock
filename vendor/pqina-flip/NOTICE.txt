@@ -1,0 +1,3 @@
+Vendored from https://github.com/pqina/flip (@pqina/flip, MIT).
+Not an npm dependency — sources copied for FlipFlap's clock animation.
+See https://pqina.nl/flip/

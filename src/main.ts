@@ -16,8 +16,16 @@ import {
 import { HEART_SVG, msIcon, sealLigatures } from './icons';
 import { mountLocaleFlags } from './locale-flags';
 import { feastsToHtml, fetchFeastsOfDay } from './saints';
-import { loadBirthdays, mountBirthdaysUi, onBirthdaysChange, todayBannerText } from './birthdays';
-import { mountTodosUi } from './todos';
+import { loadBirthdays, mountBirthdaysPage, onBirthdaysChange, todayBannerText } from './birthdays';
+import { mountTodosPage } from './todos';
+import {
+  buildClock,
+  setClockDigitMode,
+  setClockShowFlaps,
+  setClockTimeFormat,
+  type DigitMode as ClockDigitMode,
+  type TimeFormat as ClockTimeFormat,
+} from './clock';
 import {
   applyExpressiveTheme,
   COLOR_VARIANTS,
@@ -42,7 +50,8 @@ import {
 } from './theme';
 
 /** Time format: 0 = 12h AM/PM, 1 = 00–23, 2 = 0–23 */
-type TimeFormat = 0 | 1 | 2;
+type TimeFormat = ClockTimeFormat;
+type DigitMode = ClockDigitMode;
 
 interface SettingsPatch {
   tf?: TimeFormat | string;
@@ -63,35 +72,6 @@ interface SettingsPatch {
   locale?: AppLocale;
   dpf?: DigitMode | string;
 }
-
-/** Digits per flap: 1 = one digit per flap (4 flaps), 2 = HH | MM (2 flaps). */
-type DigitMode = 1 | 2;
-
-interface Face {
-  text: string;
-  cls: Partial<Record<FaceClass, boolean>>;
-}
-
-type FaceClass = 'tf0' | 'pm' | 'one' | 'eleven' | 'justeleven' | 'd1' | 'blank';
-const FACE_CLASSES: FaceClass[] = ['tf0', 'pm', 'one', 'eleven', 'justeleven', 'd1', 'blank'];
-
-interface FlipUnit {
-  key: string;
-  topOrg: HTMLElement;
-  topClone: HTMLElement;
-  bottomOrg: HTMLElement;
-  bottomClone: HTMLElement;
-  shown?: Face;
-  target?: Face;
-  busy: boolean;
-  startedAt: number;
-  /** Timer-driven flip phases (animationend is unreliable mid-flip in Chromium). */
-  timers: number[];
-}
-
-const FLIP_TOP_MS = 165;
-const FLIP_BOTTOM_MS = 165;
-const FLIP_BOTTOM_EXPRESSIVE_MS = 280;
 
 interface SegmentChangeDetail {
   indices: number[];
@@ -124,11 +104,9 @@ const SCALE_MIN = 50;
 const SCALE_DEFAULT = 64;
 const BRIGHTNESS_MAX = 100;
 const BRIGHTNESS_MIN = 50;
-const TICK_MS = 250;
+const DATE_TICK_MS = 1000;
 const BIRTHDAYS_REFRESH_MS = 60 * 60 * 1000;
-const FLIP_WATCHDOG_MS = 2000;
 const HOVER_HIDE_MS = 3000;
-const IS_FLIP_TEST = false;
 const PHONE_MQ = '(max-width: 600px)';
 const THEME_CYCLE: ColorMode[] = ['dark', 'light', 'auto', 'system'];
 const URL_FLIPFLAP = 'https://github.com/Kam3leoN/flipflap';
@@ -136,8 +114,6 @@ const URL_K3UI = 'https://github.com/Kam3leoN/k3ui-expressive';
 const URL_K3UI_DOC = 'https://k3ui-expressive.vercel.app';
 
 let digitMode: DigitMode = 2;
-let flipUnits: FlipUnit[] = [];
-let clockPainted = false;
 let displayedDateKey: string | undefined;
 let displayedSaintsKey: string | undefined;
 let saintsRequestId = 0;
@@ -228,49 +204,6 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function isOneDigit(format: TimeFormat, hour: number): boolean {
-  return (
-    (format === 0 && hour === 1) ||
-    (format === 0 && hour === 13) ||
-    (format === 2 && hour === 1)
-  );
-}
-
-function isElevenFamily(format: TimeFormat, hour: number): boolean {
-  return (
-    hour === 11 ||
-    (format === 0 && hour === 23) ||
-    (format === 1 && hour === 1) ||
-    (format >= 1 && hour !== 1 && hour % 10 === 1)
-  );
-}
-
-function isJustElevenHour(format: TimeFormat, hour: number): boolean {
-  return hour === 11 || (format === 0 && hour === 23);
-}
-
-function minuteEndsWithOne(minute: string | number): boolean {
-  return Number(minute) % 10 === 1;
-}
-
-function isMinuteEleven(minute: string | number): boolean {
-  return Number(minute) === 11;
-}
-
-function formatHour(format: TimeFormat, hour: number): string | number {
-  if (format === 0 && (hour === 0 || hour >= 13)) {
-    return Math.abs(hour - 12);
-  }
-  if (format === 1 && hour < 10) {
-    return `0${hour}`;
-  }
-  return hour;
-}
-
-function formatMinute(minute: number): string {
-  return minute < 10 ? `0${minute}` : String(minute);
-}
-
 function formatFullDate(now: Date): { text: string; iso: string } {
   const text = new Intl.DateTimeFormat(LOCALE_BCP47[getLocale()], {
     weekday: 'long',
@@ -296,11 +229,6 @@ function dispatchBody(name: string, detail?: unknown): void {
   document.body.dispatchEvent(
     new CustomEvent(name, detail === undefined ? undefined : { detail }),
   );
-}
-
-function setFlipText(el: Element, text: string | number): void {
-  const span = el.querySelector('span');
-  if (span) span.textContent = String(text);
 }
 
 /** Birthday banner under the date (visible even when the date is hidden). */
@@ -585,7 +513,7 @@ function updateSettings(patch: SettingsPatch): void {
     if (timeFormat !== next) {
       timeFormat = next;
       setStorage('tf', timeFormat);
-      tickClock();
+      setClockTimeFormat(timeFormat);
     }
   }
 
@@ -594,8 +522,7 @@ function updateSettings(patch: SettingsPatch): void {
     if (digitMode !== next) {
       digitMode = next;
       setStorage('dpf', digitMode);
-      buildFlaps();
-      tickClock();
+      setClockDigitMode(digitMode);
     }
   }
 
@@ -603,7 +530,7 @@ function updateSettings(patch: SettingsPatch): void {
     if (showFlaps !== patch.sb) {
       showFlaps = patch.sb;
       setStorage('bg', showFlaps);
-      requireEl('main-content-area').classList.toggle('dark', !showFlaps);
+      setClockShowFlaps(showFlaps);
     }
   }
 
@@ -787,7 +714,7 @@ function applyLoadedSettingsToUi(): void {
     | (HTMLElement & { selected?: boolean })
     | null;
   if (flaps) flaps.selected = showFlaps;
-  requireEl('main-content-area').classList.toggle('dark', !showFlaps);
+  setClockShowFlaps(showFlaps);
 
   const dateSw = document.getElementById('show-date') as
     | (HTMLElement & { selected?: boolean })
@@ -824,8 +751,8 @@ function applyLoadedSettingsToUi(): void {
   dispatchBody('_updateBrightness', { value: brightness });
   dispatchBody('_updateScale', { value: scale });
   window.focus();
-  tickClock();
-  setInterval(tickClock, TICK_MS);
+  buildClock({ timeFormat, digitMode, showFlaps });
+  setInterval(() => updateDateDisplay(new Date()), DATE_TICK_MS);
   document.getElementById('loader')?.classList.add('remove');
 }
 
@@ -1137,71 +1064,46 @@ function mountChromeUi(): void {
   requireEl('rail-fab').addEventListener('k3-click', openSettings);
   requireEl('rail-efab').addEventListener('k3-click', openSettings);
 
-  /** 0 = FlipFlap, 1 = birthdays, 2 = todos */
-  let navPage = 0;
+  const pageHome = requireEl('page-home');
+  const pageBirthdays = requireEl('page-birthdays');
+  const pageTodos = requireEl('page-todos');
+  const birthdaysPage = mountBirthdaysPage(pageBirthdays);
+  const todosPage = mountTodosPage(pageTodos);
 
   const setNavPage = (index: number): void => {
-    navPage = index;
     const rail = document.getElementById('app-nav-rail') as (HTMLElement & { active?: number }) | null;
     if (rail && rail.active !== index) rail.active = index;
+    const app = document.querySelector('.app');
+    const page = index === 1 ? 'birthdays' : index === 2 ? 'todos' : 'home';
+    app?.setAttribute('data-page', page);
+    pageHome.hidden = index !== 0;
+    pageHome.classList.toggle('is-active', index === 0);
+    pageBirthdays.classList.toggle('is-active', index === 1);
+    pageTodos.classList.toggle('is-active', index === 2);
+    if (index === 1) {
+      birthdaysPage.show();
+      todosPage.hide();
+    } else if (index === 2) {
+      todosPage.show();
+      birthdaysPage.hide();
+    } else {
+      birthdaysPage.hide();
+      todosPage.hide();
+    }
   };
 
-  const lockChrome = (): void => {
-    settingsOpen = true;
-    document.body.classList.add('hover', 'pause', 'settings-open');
-  };
-  const unlockChrome = (): void => {
+  const goHome = (): void => {
+    setNavPage(0);
+    void sheet.hide();
     settingsOpen = false;
     document.body.classList.remove('pause', 'settings-open');
     setHoverTimer();
   };
 
-  const openBirthdays = mountBirthdaysUi({
-    onOpen: lockChrome,
-    onClose: () => {
-      if (navPage !== 1) return;
-      unlockChrome();
-      setNavPage(0);
-    },
-  });
-  const openTodos = mountTodosUi({
-    onOpen: lockChrome,
-    onClose: () => {
-      if (navPage !== 2) return;
-      unlockChrome();
-      setNavPage(0);
-    },
-  });
-
-  const hidePanel = (id: string): void => {
-    void (document.getElementById(id) as SheetEl | null)?.hide();
-  };
-
-  const goHome = (): void => {
-    setNavPage(0);
-    hidePanel('birthday-sheet');
-    hidePanel('todo-sheet');
-    void sheet.hide();
-    unlockChrome();
-  };
-
   requireEl('app-nav-rail').addEventListener('k3-change', ((event: CustomEvent<{ index?: number }>) => {
     const index = event.detail?.index ?? 0;
-    if (index === 0) {
-      goHome();
-      return;
-    }
-    if (index === 1) {
-      setNavPage(1);
-      hidePanel('todo-sheet');
-      openBirthdays();
-      return;
-    }
-    if (index === 2) {
-      setNavPage(2);
-      hidePanel('birthday-sheet');
-      openTodos();
-    }
+    if (index === 0) goHome();
+    else setNavPage(index);
   }) as EventListener);
 
   requireEl('fab-flipclock').addEventListener('k3-click', () => {
@@ -1403,210 +1305,6 @@ function bindResize(): void {
   });
 }
 
-/** Faces (text + modifier classes) for every flap, in DOM order. */
-function computeFaces(now: Date): Face[] {
-  const hour = now.getHours();
-  const minute = IS_FLIP_TEST ? now.getSeconds() : now.getMinutes();
-  const minuteText = formatMinute(minute);
-  const hourText = String(formatHour(timeFormat, hour));
-  const tf0 = timeFormat === 0;
-  const pm = tf0 && hour >= 12;
-
-  if (digitMode === 2) {
-    return [
-      {
-        text: hourText,
-        cls: {
-          tf0,
-          pm,
-          one: isOneDigit(timeFormat, hour),
-          eleven: isElevenFamily(timeFormat, hour),
-          justeleven: isJustElevenHour(timeFormat, hour),
-        },
-      },
-      {
-        text: minuteText,
-        cls: {
-          eleven: minuteEndsWithOne(minuteText),
-          justeleven: isMinuteEleven(minuteText),
-        },
-      },
-    ];
-  }
-
-  /* 1 digit per flap — a one-digit hour leaves the first flap blank. */
-  const [h1, h2] = hourText.length === 1 ? ['', hourText] : [hourText[0], hourText[1]];
-  const digit = (text: string, extra: Face['cls'] = {}): Face => ({
-    text,
-    cls: { ...extra, d1: text === '1', blank: text === '' },
-  });
-  return [digit(h1, { tf0, pm }), digit(h2), digit(minuteText[0]), digit(minuteText[1])];
-}
-
-function faceSig(face: Face | undefined): string {
-  if (!face) return '';
-  return `${face.text}|${FACE_CLASSES.filter((c) => face.cls[c]).join(',')}`;
-}
-
-function applyFace(el: HTMLElement, face: Face): void {
-  for (const c of FACE_CLASSES) el.classList.toggle(c, Boolean(face.cls[c]));
-  setFlipText(el, face.text);
-}
-
-function flapMarkup(kind: 'hur' | 'min'): string {
-  return `<div class="flip ${kind} top"></div><div class="flip bottom ${kind}"></div>`;
-}
-
-/** (Re)build the flap DOM for the current digit mode. */
-function buildFlaps(): void {
-  for (const unit of flipUnits) clearFlipTimers(unit);
-  const area = requireEl('main-content-area');
-  area.classList.toggle('single', digitMode === 1);
-  if (digitMode === 2) {
-    area.innerHTML =
-      `<div class="flips" id="hurs" data-unit="hur" aria-hidden="true">${flapMarkup('hur')}</div>` +
-      `<div class="flips" id="mins" data-unit="min" aria-hidden="true">${flapMarkup('min')}</div>`;
-  } else {
-    area.innerHTML =
-      `<div class="flip-group" id="hurs" aria-hidden="true">` +
-      `<div class="flips digit" data-unit="h1">${flapMarkup('hur')}</div>` +
-      `<div class="flips digit" data-unit="h2">${flapMarkup('hur')}</div>` +
-      `</div>` +
-      `<div class="flip-group" id="mins" aria-hidden="true">` +
-      `<div class="flips digit" data-unit="m1">${flapMarkup('min')}</div>` +
-      `<div class="flips digit" data-unit="m2">${flapMarkup('min')}</div>` +
-      `</div>`;
-  }
-
-  flipUnits = [...area.querySelectorAll<HTMLElement>('.flips')].map((box) => {
-    const key = box.dataset.unit ?? '';
-    const [topOrg, bottomOrg] = [...box.querySelectorAll<HTMLElement>('.flip')];
-    const topClone = topOrg.cloneNode(true) as HTMLElement;
-    const bottomClone = bottomOrg.cloneNode(true) as HTMLElement;
-    topClone.classList.add('clone');
-    bottomClone.classList.add('clone');
-    box.append(topClone, bottomClone);
-    for (const el of [topOrg, bottomOrg, topClone, bottomClone]) {
-      el.appendChild(document.createElement('span'));
-    }
-    const unit: FlipUnit = {
-      key,
-      topOrg,
-      topClone,
-      bottomOrg,
-      bottomClone,
-      busy: false,
-      startedAt: 0,
-      timers: [],
-    };
-    bindUnitAnimation(unit);
-    return unit;
-  });
-  clockPainted = false;
-}
-
-function clearFlipTimers(unit: FlipUnit): void {
-  for (const id of unit.timers) window.clearTimeout(id);
-  unit.timers = [];
-}
-
-function bottomFlipMs(): number {
-  return document.documentElement.dataset.motion === 'expressive'
-    ? FLIP_BOTTOM_EXPRESSIVE_MS
-    : FLIP_BOTTOM_MS;
-}
-
-function finishFlip(unit: FlipUnit): void {
-  clearFlipTimers(unit);
-  /* Paint every face to the target BEFORE parking the clones edge-on —
-     otherwise the lower half flashes the previous digit for a frame. */
-  if (unit.target) {
-    for (const el of [unit.topOrg, unit.bottomOrg, unit.topClone, unit.bottomClone]) {
-      applyFace(el, unit.target);
-    }
-    unit.shown = unit.target;
-  }
-  unit.topClone.classList.remove('act', 'transform');
-  unit.bottomClone.classList.remove('act', 'transform');
-  unit.busy = false;
-}
-
-function bounceBottom(unit: FlipUnit): void {
-  unit.bottomOrg.classList.remove('hit');
-  void unit.bottomOrg.offsetWidth;
-  unit.bottomOrg.classList.add('hit');
-}
-
-function bindUnitAnimation(unit: FlipUnit): void {
-  unit.bottomOrg.addEventListener('animationend', (event) => {
-    if (event.target === unit.bottomOrg) unit.bottomOrg.classList.remove('hit');
-  });
-}
-
-function flipTo(unit: FlipUnit, face: Face): void {
-  clearFlipTimers(unit);
-  unit.busy = true;
-  unit.startedAt = performance.now();
-  unit.target = face;
-  /* Falling top clone must keep the OLD digit; static top + rising clone get NEW. */
-  if (unit.shown) applyFace(unit.topClone, unit.shown);
-  applyFace(unit.topOrg, face);
-  applyFace(unit.bottomClone, face);
-
-  unit.topClone.classList.add('act', 'transform');
-
-  const topDone = window.setTimeout(() => {
-    if (!unit.busy || unit.target !== face) return;
-    applyFace(unit.topClone, face);
-    unit.topClone.classList.remove('act', 'transform');
-    unit.bottomClone.classList.add('act', 'transform');
-
-    const bottomDone = window.setTimeout(() => {
-      if (!unit.busy || unit.target !== face) return;
-      finishFlip(unit);
-      bounceBottom(unit);
-    }, bottomFlipMs());
-    unit.timers.push(bottomDone);
-  }, FLIP_TOP_MS);
-  unit.timers.push(topDone);
-}
-
-/** Clock heartbeat: paint immediately the first time, then flip changed flaps. */
-function tickClock(): void {
-  const now = new Date();
-  updateDateDisplay(now);
-  if (!flipUnits.length) return;
-  const faces = computeFaces(now);
-  const area = requireEl('main-content-area');
-
-  if (!clockPainted) {
-    area.classList.add('stop');
-    flipUnits.forEach((unit, i) => {
-      for (const el of [unit.topOrg, unit.bottomOrg, unit.topClone, unit.bottomClone]) {
-        el.classList.remove('act', 'transform', 'hit');
-        applyFace(el, faces[i]);
-      }
-      unit.shown = faces[i];
-      unit.target = faces[i];
-      unit.busy = false;
-    });
-    clockPainted = true;
-    return;
-  }
-
-  flipUnits.forEach((unit, i) => {
-    if (unit.busy) {
-      /* Background tabs may pause CSS animations — never stay stuck. */
-      if (performance.now() - unit.startedAt > FLIP_WATCHDOG_MS) finishFlip(unit);
-      return;
-    }
-    if (faceSig(faces[i]) !== faceSig(unit.shown)) {
-      area.classList.remove('stop');
-      flipTo(unit, faces[i]);
-    }
-  });
-}
-
 function bindHoverChrome(): void {
   document.body.addEventListener('mousemove', () => {
     if (settingsOpen) return;
@@ -1633,7 +1331,6 @@ document.addEventListener('DOMContentLoaded', () => {
     await applyThemeFromMode();
 
     mountChromeUi();
-    buildFlaps();
     bindScaleAndBrightness();
     bindHoverChrome();
     bindResize();

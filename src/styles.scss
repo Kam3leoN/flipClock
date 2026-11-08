@@ -681,6 +681,118 @@ k3-nav-rail:not(:defined) {
   overflow: hidden;
 }
 
+/* —— App pages (home clock · birthdays · todos) —— */
+.app-page {
+  position: absolute;
+  inset: 0;
+  display: none;
+  min-width: 0;
+  min-height: 0;
+}
+.app-page.is-active:not([hidden]) {
+  display: block;
+}
+.page-panel {
+  box-sizing: border-box;
+  height: 100%;
+  max-height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  font-family: 'Google Sans', 'Google Sans Text', system-ui, sans-serif;
+  color: var(--md-sys-color-on-surface);
+  background: var(--md-sys-color-background);
+}
+.page-header {
+  flex: 0 0 auto;
+  padding: 1.25rem 1.5rem 0.75rem;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+}
+.page-title {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.page-tagline {
+  margin: 0.35rem 0 0;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.9rem;
+}
+.bd-page .bd-body,
+.todo-page .todo-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 1rem 1.5rem 1.5rem;
+}
+
+/* —— PQINA Flip clock (vendored @pqina/flip) —— */
+#main-content-area {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: fliqlo, sans-serif;
+  font-weight: 700;
+}
+#main-content-area .flipflap-clock.tick {
+  font-size: 18rem;
+  line-height: 1;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--flip-digit);
+}
+#main-content-area .flipflap-clock-row {
+  gap: 0.08em;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+}
+#main-content-area .tick-flip {
+  margin: 0 0.02em;
+  min-width: 0.95em;
+  border-radius: 0.12em;
+  letter-spacing: 0;
+  text-indent: 0;
+  box-shadow: 0 0 0.04em var(--flip-shadow);
+}
+#main-content-area .tick-flip-panel {
+  color: var(--flip-digit);
+  background-color: var(--flip-face-top);
+}
+#main-content-area .tick-flip-panel-back {
+  background-color: var(--flip-face-bottom);
+}
+#main-content-area.flipflap-clock--plain .tick-flip-panel,
+#main-content-area.flipflap-clock--plain .tick-flip-panel-front,
+#main-content-area.flipflap-clock--plain .tick-flip-panel-back {
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+#main-content-area.flipflap-clock--plain .tick-flip {
+  box-shadow: none;
+}
+#main-content-area.flipflap-clock--plain .tick-flip-shadow,
+#main-content-area.flipflap-clock--plain .tick-flip-card-shadow,
+#main-content-area.flipflap-clock--plain .tick-flip-panel-front-shadow,
+#main-content-area.flipflap-clock--plain .tick-flip-panel-back-shadow,
+#main-content-area.flipflap-clock--plain .tick-flip-panel-back-highlight,
+#main-content-area.flipflap-clock--plain .tick-flip-panel-back::after {
+  display: none !important;
+}
+.portrait #main-content-area .flipflap-clock.tick {
+  font-size: 12rem;
+}
+@media (max-width: 900px) {
+  #main-content-area .flipflap-clock.tick {
+    font-size: 10rem;
+  }
+}
+
 /*
  * FAB menu — always visible at 16dp from bottom / trailing edge.
  * Modal sheet (K3ui sheet-chrome-shift) conceals it via data-k3-overlay-concealed;
@@ -1034,7 +1146,6 @@ body.settings-open k3-fab-menu.settings-trigger:not([data-k3-overlay-concealed])
   gap: 12px;
   box-sizing: border-box;
   min-width: 0;
-  padding: 8px 1.25rem 8px 1.5rem;
   text-align: left;
   font-family: 'Google Sans', 'Google Sans Text', system-ui, sans-serif;
   color: var(--md-sys-color-on-surface);
@@ -1188,11 +1299,6 @@ body.settings-open k3-fab-menu.settings-trigger:not([data-k3-overlay-concealed])
   display: flex;
   gap: 2px;
 }
-.birthday-sheet,
-.todo-sheet {
-  --k3-settings-sheet-width: min(28rem, 100vw);
-}
-
 /* —— To-do —— */
 .todo-body {
   display: flex;
@@ -1200,7 +1306,6 @@ body.settings-open k3-fab-menu.settings-trigger:not([data-k3-overlay-concealed])
   gap: 12px;
   box-sizing: border-box;
   min-width: 0;
-  padding: 8px 1.25rem 8px 1.5rem;
   text-align: left;
   font-family: 'Google Sans', 'Google Sans Text', system-ui, sans-serif;
   color: var(--md-sys-color-on-surface);

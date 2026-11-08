@@ -13,11 +13,11 @@
     <title>FlipFlap</title>
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=add,arrow_drop_down,cake,check,check_circle,checklist,close,code,delete,edit,expand_more,fullscreen,fullscreen_exit,home,menu,menu_book,palette,radio_button_unchecked,settings,widgets"
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=add,arrow_drop_down,cake,check,check_circle,checklist,close,code,delete,edit,expand_more,fullscreen,fullscreen_exit,home,menu,menu_book,menu_open,palette,radio_button_unchecked,settings,widgets"
     />
   </head>
   <body>
-    <div class="app" data-nav="rail">
+    <div class="app" data-nav="rail" data-page="home">
       <k3-nav-rail
         id="app-nav-rail"
         class="shell-rail"
@@ -41,16 +41,22 @@
       <div class="shell-content" id="shell-content">
         <div id="bandeau-fr" class="bandeau gauche" aria-hidden="true"><i></i><i></i><i></i></div>
         <div id="loader" aria-busy="true" aria-live="polite"></div>
-        <div id="clock-meta" class="clock-meta" hidden>
-          <time id="clock-date" datetime=""></time>
-          <p id="clock-saints" class="clock-saints" hidden></p>
-          <p id="clock-birthdays" class="clock-birthdays" role="status" hidden></p>
-        </div>
-        <div id="main">
-          <div id="main-content">
-            <div id="main-content-area" role="timer" aria-live="off" aria-atomic="true"></div>
+
+        <section id="page-home" class="app-page is-active" data-page="home">
+          <div id="clock-meta" class="clock-meta" hidden>
+            <time id="clock-date" datetime=""></time>
+            <p id="clock-saints" class="clock-saints" hidden></p>
+            <p id="clock-birthdays" class="clock-birthdays" role="status" hidden></p>
           </div>
-        </div>
+          <div id="main">
+            <div id="main-content">
+              <div id="main-content-area" role="timer" aria-live="off" aria-atomic="true"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="page-birthdays" class="app-page" data-page="birthdays" hidden></section>
+        <section id="page-todos" class="app-page" data-page="todos" hidden></section>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

@@ -1,4 +1,4 @@
-/** To-do list — localStorage + k3ui sheet. */
+/** To-do list — localStorage + full page UI. */
 import { t } from './i18n';
 import { msIcon, sealLigatures } from './icons';
 
@@ -8,14 +8,6 @@ export interface TodoItem {
   done: boolean;
   createdAt: number;
 }
-
-type SheetEl = HTMLElement & {
-  show: () => Promise<boolean>;
-  hide: () => Promise<boolean>;
-  placement: 'bottom' | 'side';
-  side: 'start' | 'end';
-  width: 'standard' | 'full';
-};
 
 type FieldEl = HTMLElement & { value: string };
 
@@ -87,15 +79,15 @@ function renderList(): string {
     .join('');
 }
 
-/** Mount the to-do sheet; returns an opener. */
-export function mountTodosUi(opts: { onOpen?: () => void; onClose?: () => void }): () => void {
+/** Mount to-do management into a page root. */
+export function mountTodosPage(root: HTMLElement): { show: () => void; hide: () => void } {
   load();
-  document.body.insertAdjacentHTML(
-    'beforeend',
-    `<k3-sheet id="todo-sheet" class="settings-sheet todo-sheet" placement="side" side="end" modal aria-label="${t('todo.title')}">
-      <span slot="headline">${t('todo.title')}</span>
+  root.innerHTML = `<div class="page-panel todo-page">
+      <header class="page-header">
+        <h1 class="page-title">${t('todo.title')}</h1>
+        <p class="page-tagline">${t('todo.tagline')}</p>
+      </header>
       <div class="todo-body">
-        <p class="todo-tagline">${t('todo.tagline')}</p>
         <form id="todo-form" class="todo-form" novalidate>
           <k3-text-field
             id="todo-input"
@@ -107,13 +99,10 @@ export function mountTodosUi(opts: { onOpen?: () => void; onClose?: () => void }
           ></k3-text-field>
           <k3-button id="todo-add" variant="filled" size="sm" type="submit">${t('todo.add')}</k3-button>
         </form>
-        <ul id="todo-list" class="todo-list"></ul>
+        <ul id="todo-list" class="todo-list k3-scroll"></ul>
       </div>
-      <k3-button slot="actions" id="todo-close" variant="filled" size="sm">${t('todo.close')}</k3-button>
-    </k3-sheet>`,
-  );
+    </div>`;
 
-  const sheet = document.getElementById('todo-sheet') as SheetEl;
   const form = document.getElementById('todo-form') as HTMLFormElement;
   const input = document.getElementById('todo-input') as FieldEl;
   const listEl = document.getElementById('todo-list') as HTMLElement;
@@ -144,8 +133,6 @@ export function mountTodosUi(opts: { onOpen?: () => void; onClose?: () => void }
     e.preventDefault();
     add();
   });
-  document.getElementById('todo-close')?.addEventListener('k3-click', () => void sheet.hide());
-  sheet.addEventListener('k3-close-end', () => opts.onClose?.());
 
   listEl.addEventListener('k3-click', (event) => {
     const btn = (event.target as HTMLElement).closest<HTMLElement>('[data-action]');
@@ -160,12 +147,14 @@ export function mountTodosUi(opts: { onOpen?: () => void; onClose?: () => void }
     }
   });
 
-  return () => {
-    const phone = window.matchMedia('(max-width: 600px)').matches;
-    sheet.placement = phone ? 'bottom' : 'side';
-    if (phone) sheet.width = 'full';
-    else sheet.side = 'end';
-    opts.onOpen?.();
-    void sheet.show();
+  return {
+    show: () => {
+      root.hidden = false;
+      load();
+      render();
+    },
+    hide: () => {
+      root.hidden = true;
+    },
   };
 }

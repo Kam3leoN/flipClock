@@ -1,4 +1,4 @@
-/** Birthdays — CRUD against /api/birthdays (MongoDB) + clock banner. */
+/** Birthdays — CRUD against /api/birthdays (MongoDB) + clock banner + page UI. */
 import { getLocale, LOCALE_BCP47, t } from './i18n';
 import { msIcon, sealLigatures } from './icons';
 
@@ -17,13 +17,7 @@ export interface UpcomingBirthday extends Birthday {
   turning: number | null;
 }
 
-type SheetEl = HTMLElement & {
-  show: () => Promise<boolean>;
-  hide: () => Promise<boolean>;
-  placement: 'bottom' | 'side';
-  side: 'start' | 'end';
-  width: 'standard' | 'full';
-};
+type FieldEl = HTMLElement & { value: string };
 
 const API = '/api/birthdays';
 const KEY_STORAGE = 'bdkey';
@@ -33,8 +27,6 @@ let items: Birthday[] = [];
 let loaded = false;
 let editingId: string | null = null;
 const listeners = new Set<() => void>();
-
-/* ——— helpers ——— */
 
 function fmt(key: string, vars: Record<string, string | number>): string {
   return t(key).replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ''));
@@ -56,7 +48,6 @@ function isLeap(year: number): boolean {
   return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
 }
 
-/** Date of the birthday in a given year (29 Feb → 28 Feb on non-leap years). */
 function occurrence(b: Birthday, year: number): Date {
   const day = b.month === 2 && b.day === 29 && !isLeap(year) ? 28 : b.day;
   return new Date(year, b.month - 1, day);
@@ -86,8 +77,6 @@ export function onBirthdaysChange(fn: () => void): void {
 function emit(): void {
   listeners.forEach((fn) => fn());
 }
-
-/* ——— API ——— */
 
 async function request(method: string, url: string, body?: unknown, retry = true): Promise<Response> {
   const headers: Record<string, string> = {};
@@ -152,8 +141,6 @@ async function deleteBirthday(id: string): Promise<void> {
   emit();
 }
 
-/* ——— rendering ——— */
-
 function monthNames(): string[] {
   const f = new Intl.DateTimeFormat(LOCALE_BCP47[getLocale()], { month: 'long' });
   return Array.from({ length: 12 }, (_, i) => f.format(new Date(2024, i, 1)));
@@ -206,8 +193,6 @@ function renderList(list: UpcomingBirthday[]): string {
     .join('');
 }
 
-type FieldEl = HTMLElement & { value: string };
-
 function formMarkup(): string {
   const months = monthNames()
     .map((m, i) => `<k3-menu-item value="${i + 1}">${esc(m)}</k3-menu-item>`)
@@ -231,28 +216,25 @@ function formMarkup(): string {
     </form>`;
 }
 
-/** Mount the birthdays sheet; returns an opener. */
-export function mountBirthdaysUi(opts: { onOpen?: () => void; onClose?: () => void }): () => void {
-  document.body.insertAdjacentHTML(
-    'beforeend',
-    `<k3-sheet id="birthday-sheet" class="settings-sheet birthday-sheet" placement="side" side="end" modal aria-label="${t('bd.title')}">
-      <span slot="headline">${t('bd.title')}</span>
+/** Mount birthdays management into a page root. */
+export function mountBirthdaysPage(root: HTMLElement): { show: () => void; hide: () => void } {
+  root.innerHTML = `<div class="page-panel bd-page">
+      <header class="page-header">
+        <h1 class="page-title">${t('bd.title')}</h1>
+        <p class="page-tagline">${t('bd.tagline')}</p>
+      </header>
       <div class="bd-body">
-        <p class="bd-tagline">${t('bd.tagline')}</p>
         <div id="bd-stats" class="bd-stats"></div>
         <div class="bd-toolbar">
-          <h3 class="bd-section">${t('bd.upcoming')}</h3>
+          <h2 class="bd-section">${t('bd.upcoming')}</h2>
           <k3-button id="bd-add" variant="tonal" size="sm">${t('bd.add')}</k3-button>
         </div>
         ${formMarkup()}
         <p id="bd-status" class="bd-status" hidden></p>
-        <ul id="bd-list" class="bd-list"></ul>
+        <ul id="bd-list" class="bd-list k3-scroll"></ul>
       </div>
-      <k3-button slot="actions" id="bd-close" variant="filled" size="sm">${t('bd.close')}</k3-button>
-    </k3-sheet>`,
-  );
+    </div>`;
 
-  const sheet = document.getElementById('birthday-sheet') as SheetEl;
   const form = document.getElementById('bd-form') as HTMLFormElement;
   const nameIn = document.getElementById('bd-name') as FieldEl;
   const dayIn = document.getElementById('bd-day') as FieldEl;
@@ -332,11 +314,6 @@ export function mountBirthdaysUi(opts: { onOpen?: () => void; onClose?: () => vo
     e.preventDefault();
     void submit();
   });
-  document.getElementById('bd-close')?.addEventListener('k3-click', () => void sheet.hide());
-  sheet.addEventListener('k3-close-end', () => {
-    closeForm();
-    opts.onClose?.();
-  });
 
   const onItemAction = (event: Event): void => {
     const btn = (event.target as HTMLElement).closest<HTMLElement>('[data-action]');
@@ -356,18 +333,20 @@ export function mountBirthdaysUi(opts: { onOpen?: () => void; onClose?: () => vo
 
   render();
 
-  return () => {
-    const phone = window.matchMedia('(max-width: 600px)').matches;
-    sheet.placement = phone ? 'bottom' : 'side';
-    if (phone) sheet.width = 'full';
-    else sheet.side = 'end';
-    opts.onOpen?.();
-    void sheet.show();
-    statusEl.hidden = true;
-    loadBirthdays().catch(() => {
-      statusEl.hidden = false;
-      statusEl.textContent = t('bd.loadError');
-    });
+  return {
+    show: () => {
+      root.hidden = false;
+      closeForm();
+      statusEl.hidden = true;
+      loadBirthdays().catch(() => {
+        statusEl.hidden = false;
+        statusEl.textContent = t('bd.loadError');
+      });
+    },
+    hide: () => {
+      closeForm();
+      root.hidden = true;
+    },
   };
 }
 
