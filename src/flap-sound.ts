@@ -6,7 +6,7 @@
 
 const CLICK_SRC = '/audio/flap_single.mp3';
 /** Soft ceiling — beyond this, more clicks add noise not presence. */
-const MAX_VOICES = 10;
+const MAX_VOICES = 3;
 const POOL_SIZE = MAX_VOICES;
 /** Approximate click length — frees a voice slot after this. */
 const CLICK_MS = 140;
@@ -17,7 +17,7 @@ let nextClick = 0;
 let voicesPlaying = 0;
 /** Pending clicks waiting for a free voice (capped). */
 const queue: number[] = [];
-const QUEUE_CAP = 10;
+const QUEUE_CAP = 3;
 let drainTimer: ReturnType<typeof setTimeout> | null = null;
 
 async function tryPlay(el: HTMLAudioElement): Promise<void> {
