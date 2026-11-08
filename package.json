@@ -18,10 +18,12 @@
   },
   "dependencies": {
     "flag-icons": "^7.6.0",
+    "howler": "^2.2.4",
     "k3ui": "github:Kam3leoN/k3ui-expressive",
     "mongodb": "^6.22.0"
   },
   "devDependencies": {
+    "@types/howler": "^2.2.13",
     "sass": "^1.93.2",
     "typescript": "~5.9.3",
     "vite": "^7.1.12"
