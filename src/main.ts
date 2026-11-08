@@ -18,12 +18,11 @@ import { mountLocaleFlags } from './locale-flags';
 import { feastsToHtml, fetchFeastsOfDay } from './saints';
 import { loadBirthdays, mountBirthdaysPage, onBirthdaysChange, todayBannerText } from './birthdays';
 import { mountTodosPage } from './todos';
+import { mountSplitPage } from './split-board';
 import {
   buildClock,
-  setClockDigitMode,
   setClockShowFlaps,
   setClockTimeFormat,
-  type DigitMode as ClockDigitMode,
   type TimeFormat as ClockTimeFormat,
 } from './clock';
 import {
@@ -51,7 +50,6 @@ import {
 
 /** Time format: 0 = 12h AM/PM, 1 = 00–23, 2 = 0–23 */
 type TimeFormat = ClockTimeFormat;
-type DigitMode = ClockDigitMode;
 
 interface SettingsPatch {
   tf?: TimeFormat | string;
@@ -70,7 +68,6 @@ interface SettingsPatch {
   spec?: ColorSpecVersion;
   motion?: MotionScheme;
   locale?: AppLocale;
-  dpf?: DigitMode | string;
 }
 
 interface SegmentChangeDetail {
@@ -113,7 +110,6 @@ const URL_FLIPFLAP = 'https://github.com/Kam3leoN/flipflap';
 const URL_K3UI = 'https://github.com/Kam3leoN/k3ui-expressive';
 const URL_K3UI_DOC = 'https://k3ui-expressive.vercel.app';
 
-let digitMode: DigitMode = 2;
 let displayedDateKey: string | undefined;
 let displayedSaintsKey: string | undefined;
 let saintsRequestId = 0;
@@ -148,7 +144,6 @@ function getStorage(key: string): string | null {
 /** Persist every preference currently in memory. */
 function saveAllPreferences(): void {
   setStorage('tf', timeFormat);
-  setStorage('dpf', digitMode);
   setStorage('bg', showFlaps);
   setStorage('date', showDate);
   setStorage('bandeau', showBandeau);
@@ -188,10 +183,6 @@ function syncSaintsVisibility(): void {
   const visible = showDate && showSaints;
   el.hidden = !visible;
   el.setAttribute('aria-hidden', visible ? 'false' : 'true');
-}
-
-function parseDigitMode(raw: string | number | null | undefined): DigitMode {
-  return Number(raw) === 1 ? 1 : 2;
 }
 
 function parseTimeFormat(raw: string | number): TimeFormat {
@@ -440,6 +431,8 @@ function refreshUiCopy(): void {
   if (railEFabLabel) railEFabLabel.textContent = t('menu.settings');
   const navHome = document.getElementById('nav-home');
   if (navHome) navHome.setAttribute('label', t('nav.home'));
+  const navSplit = document.getElementById('nav-split');
+  if (navSplit) navSplit.setAttribute('label', t('nav.split'));
   const navBd = document.getElementById('nav-birthdays');
   if (navBd) navBd.setAttribute('label', t('nav.birthdays'));
   const navTodo = document.getElementById('nav-todos');
@@ -514,15 +507,6 @@ function updateSettings(patch: SettingsPatch): void {
       timeFormat = next;
       setStorage('tf', timeFormat);
       setClockTimeFormat(timeFormat);
-    }
-  }
-
-  if (Object.prototype.hasOwnProperty.call(patch, 'dpf') && patch.dpf !== undefined) {
-    const next = parseDigitMode(patch.dpf);
-    if (digitMode !== next) {
-      digitMode = next;
-      setStorage('dpf', digitMode);
-      setClockDigitMode(digitMode);
     }
   }
 
@@ -645,8 +629,6 @@ function loadPersistedSettings(): void {
     timeFormat = parseTimeFormat(storedTf);
   }
 
-  digitMode = parseDigitMode(getStorage('dpf'));
-
   const storedBg = getStorage('bg');
   if (storedBg === null) setStorage('bg', showFlaps);
   else showFlaps = String(storedBg).toLowerCase() === 'true';
@@ -705,10 +687,6 @@ function applyLoadedSettingsToUi(): void {
     | (HTMLElement & { setSelectedIndices?: (i: number[]) => void })
     | null;
   tf?.setSelectedIndices?.([timeFormat]);
-  const dpf = document.getElementById('dpf') as
-    | (HTMLElement & { setSelectedIndices?: (i: number[]) => void })
-    | null;
-  dpf?.setSelectedIndices?.([digitMode === 1 ? 0 : 1]);
 
   const flaps = document.getElementById('bg') as
     | (HTMLElement & { selected?: boolean })
@@ -751,7 +729,7 @@ function applyLoadedSettingsToUi(): void {
   dispatchBody('_updateBrightness', { value: brightness });
   dispatchBody('_updateScale', { value: scale });
   window.focus();
-  buildClock({ timeFormat, digitMode, showFlaps });
+  buildClock({ timeFormat, showFlaps });
   setInterval(() => updateDateDisplay(new Date()), DATE_TICK_MS);
   document.getElementById('loader')?.classList.add('remove');
 }
@@ -778,10 +756,6 @@ function mountChromeUi(): void {
     { label: '12', value: '0' },
     { label: '00', value: '1' },
     { label: '0', value: '2' },
-  ]);
-  const digitSegments = JSON.stringify([
-    { label: '1', value: '1' },
-    { label: '2', value: '2' },
   ]);
   const themeSegments = JSON.stringify([
     { label: t('theme.dark'), value: 'dark' },
@@ -876,16 +850,6 @@ function mountChromeUi(): void {
             aria-label="${t('opt.hourFormat')}"
             segments='${hourSegments}'
             selected-indices="[${timeFormat}]"
-          ></k3-button-segmented>
-        </div>
-        <div class="opt-row">
-          <span class="opt-label" data-i18n="opt.digitsPerFlap">${t('opt.digitsPerFlap')}</span>
-          <k3-button-segmented
-            id="dpf"
-            shape="rounded"
-            aria-label="${t('opt.digitsPerFlap')}"
-            segments='${digitSegments}'
-            selected-indices="[${digitMode === 1 ? 0 : 1}]"
           ></k3-button-segmented>
         </div>
           <div class="opt-row">
@@ -1065,31 +1029,32 @@ function mountChromeUi(): void {
   requireEl('rail-efab').addEventListener('k3-click', openSettings);
 
   const pageHome = requireEl('page-home');
+  const pageSplit = requireEl('page-split');
   const pageBirthdays = requireEl('page-birthdays');
   const pageTodos = requireEl('page-todos');
+  const splitPage = mountSplitPage(pageSplit);
   const birthdaysPage = mountBirthdaysPage(pageBirthdays);
   const todosPage = mountTodosPage(pageTodos);
+
+  const PAGE_IDS = ['home', 'split', 'birthdays', 'todos'] as const;
 
   const setNavPage = (index: number): void => {
     const rail = document.getElementById('app-nav-rail') as (HTMLElement & { active?: number }) | null;
     if (rail) rail.active = index;
     const app = document.querySelector('.app');
-    const page = index === 1 ? 'birthdays' : index === 2 ? 'todos' : 'home';
+    const page = PAGE_IDS[index] ?? 'home';
     app?.setAttribute('data-page', page);
     pageHome.hidden = index !== 0;
     pageHome.classList.toggle('is-active', index === 0);
-    pageBirthdays.classList.toggle('is-active', index === 1);
-    pageTodos.classList.toggle('is-active', index === 2);
-    if (index === 1) {
-      birthdaysPage.show();
-      todosPage.hide();
-    } else if (index === 2) {
-      todosPage.show();
-      birthdaysPage.hide();
-    } else {
-      birthdaysPage.hide();
-      todosPage.hide();
-    }
+    pageSplit.classList.toggle('is-active', index === 1);
+    pageBirthdays.classList.toggle('is-active', index === 2);
+    pageTodos.classList.toggle('is-active', index === 3);
+    splitPage.hide();
+    birthdaysPage.hide();
+    todosPage.hide();
+    if (index === 1) splitPage.show();
+    else if (index === 2) birthdaysPage.show();
+    else if (index === 3) todosPage.show();
   };
 
   const goHome = (): void => {
@@ -1114,8 +1079,9 @@ function mountChromeUi(): void {
   (
     [
       ['nav-home', 0],
-      ['nav-birthdays', 1],
-      ['nav-todos', 2],
+      ['nav-split', 1],
+      ['nav-birthdays', 2],
+      ['nav-todos', 3],
     ] as const
   ).forEach(([id, index]) => {
     requireEl(id).addEventListener('click', () => onNavIndex(index));
@@ -1142,11 +1108,6 @@ function mountChromeUi(): void {
     const raw = event.detail?.values?.[0] ?? event.detail?.indices?.[0];
     if (raw === undefined) return;
     updateSettings({ tf: raw });
-  }) as EventListener);
-
-  requireEl('dpf').addEventListener('k3-change', ((event: CustomEvent<SegmentChangeDetail>) => {
-    const raw = event.detail?.values?.[0];
-    if (raw === '1' || raw === '2') updateSettings({ dpf: raw });
   }) as EventListener);
 
   requireEl('show-date').addEventListener('k3-change', ((event: CustomEvent<SwitchChangeDetail>) => {

@@ -13,7 +13,7 @@
     <title>FlipFlap</title>
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=add,arrow_drop_down,cake,check,check_circle,checklist,close,code,delete,edit,expand_more,fullscreen,fullscreen_exit,home,menu,menu_book,menu_open,palette,radio_button_unchecked,settings,widgets"
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=add,arrow_drop_down,cake,check,check_circle,checklist,close,code,delete,edit,expand_more,fullscreen,fullscreen_exit,home,menu,menu_book,menu_open,palette,radio_button_unchecked,settings,splitscreen,widgets"
     />
   </head>
   <body>
@@ -34,6 +34,7 @@
           <span data-i18n="menu.settings">Settings</span>
         </k3-extended-fab>
         <k3-nav-item id="nav-home" icon="home" label="FlipFlap" active></k3-nav-item>
+        <k3-nav-item id="nav-split" icon="splitscreen" label="Split"></k3-nav-item>
         <k3-nav-item id="nav-birthdays" icon="cake" label="Birthdays"></k3-nav-item>
         <k3-nav-item id="nav-todos" icon="checklist" label="To-do"></k3-nav-item>
       </k3-nav-rail>
@@ -55,6 +56,7 @@
           </div>
         </section>
 
+        <section id="page-split" class="app-page" data-page="split" hidden></section>
         <section id="page-birthdays" class="app-page" data-page="birthdays" hidden></section>
         <section id="page-todos" class="app-page" data-page="todos" hidden></section>
       </div>

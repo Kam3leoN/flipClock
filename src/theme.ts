@@ -49,6 +49,7 @@ export const VARIANT_LABELS: Record<ColorVariant, string> = {
 
 const SETTINGS_COMPONENTS = [
   'k3-sheet',
+  'k3-dialog',
   'k3-fab-menu',
   'k3-fab-menu-item',
   'k3-split-button',
@@ -58,6 +59,7 @@ const SETTINGS_COMPONENTS = [
   'k3-switch',
   'k3-button-segmented',
   'k3-select',
+  'k3-text-field',
 ] as const;
 
 export interface ThemeConfig {
