@@ -53,6 +53,14 @@
   font-style: normal;
   font-display: block;
 }
+/* ScreenBox Themes/Default/Assets/Fonts/BebasNeue/BebasNeuePro-Regular.ttf */
+@font-face {
+  font-family: 'Bebas Neue Pro';
+  src: url('/fonts/BebasNeuePro-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
 body,
 html {
   width: 100%;
@@ -1016,9 +1024,9 @@ k3-nav-rail:not(:defined) {
   margin: 0;
   padding: 0;
   color: var(--sf-text);
-  font-family: 'Bebas Neue', 'BebasNeue', sans-serif;
+  font-family: 'Bebas Neue Pro', sans-serif;
   font-weight: 400;
-  font-size: 78cqh; /* Bebas Neue is condensed — fill flap height */
+  font-size: 78cqh; /* condensed Pro Regular — fill flap height */
   line-height: 1;
   letter-spacing: 0.02em;
   text-indent: 0;
