@@ -18,7 +18,7 @@ const DEFAULT_INTERVAL_SEC = 8;
 const MIN_INTERVAL_SEC = 3;
 const MAX_INTERVAL_SEC = 120;
 /** PQINA flip card duration (ms) — wait before next intermediate step. */
-const FLIP_STEP_MS = 880;
+const FLIP_STEP_MS = 1000;
 const LIVE_PRESETS = [
   { w: 1920, h: 1080 },
   { w: 2560, h: 1440 },
@@ -27,7 +27,8 @@ const LIVE_PRESETS = [
 type FieldEl = HTMLElement & { value: string };
 
 interface Cell {
-  key: string;
+  root: HTMLElement;
+  tick: TickInstance | null;
   current: string;
   target: string;
   busy: boolean;
@@ -48,11 +49,8 @@ let visible = false;
 let live = false;
 let flipping = false;
 let pageRoot: HTMLElement | null = null;
-let tick: TickInstance | null = null;
-let tickRoot: HTMLElement | null = null;
 let pageGen = 0;
-/** Source of truth for concurrent PQINA key updates (avoid stale reads). */
-let livePayload: Record<string, string> = {};
+let liveChromeBtn: HTMLElement | null = null;
 
 function blankPage(): string[] {
   return Array.from({ length: SPLIT_ROWS }, () => ' '.repeat(SPLIT_COLS));
@@ -61,6 +59,11 @@ function blankPage(): string[] {
 function normalizeChar(raw: string): string {
   const c = (raw || ' ').toUpperCase();
   return SPLIT_CHARSET.includes(c) ? c : ' ';
+}
+
+/** Visible glyph for PQINA spacer — NBSP keeps blank flaps sized like letters. */
+function displayChar(ch: string): string {
+  return ch === ' ' ? '\u00A0' : ch;
 }
 
 function padLine(raw: string): string {
@@ -143,10 +146,6 @@ function persist(): void {
   }
 }
 
-function cellKey(r: number, c: number): string {
-  return `r${r}c${c}`;
-}
-
 function charsetIndex(ch: string): number {
   const i = SPLIT_CHARSET.indexOf(normalizeChar(ch));
   return i < 0 ? 0 : i;
@@ -170,59 +169,60 @@ function delay(ms: number): Promise<void> {
   });
 }
 
-function blankPayload(): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (let r = 0; r < SPLIT_ROWS; r++) {
-    for (let c = 0; c < SPLIT_COLS; c++) {
-      out[cellKey(r, c)] = ' ';
-    }
-  }
-  return out;
-}
-
-function pagePayload(page: string[]): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (let r = 0; r < SPLIT_ROWS; r++) {
-    const line = page[r] ?? ' '.repeat(SPLIT_COLS);
-    for (let c = 0; c < SPLIT_COLS; c++) {
-      out[cellKey(r, c)] = normalizeChar(line[c] ?? ' ');
-    }
-  }
-  return out;
-}
-
-function setCellValue(key: string, ch: string): void {
+function setCellValue(cell: Cell, ch: string, animate: boolean): void {
   const next = normalizeChar(ch);
-  livePayload[key] = next;
-  if (tick) tick.value = { ...livePayload };
-}
-
-function applyPayload(payload: Record<string, string>): void {
-  livePayload = { ...payload };
-  if (tick) tick.value = { ...livePayload };
-}
-
-function destroyTick(): void {
-  if (tickRoot) {
+  cell.current = next;
+  if (!cell.tick) return;
+  const glyph = displayChar(next);
+  if (!animate) {
+    /* Destroy/recreate skips the 3D tween for instant paint. */
     try {
-      window.Tick.DOM.destroy(tickRoot);
+      window.Tick.DOM.destroy(cell.root);
     } catch {
-      /* already gone */
+      /* ignore */
+    }
+    cell.root.innerHTML = `<span data-view="flip" data-style="rounded:panels"></span>`;
+    cell.tick = window.Tick.DOM.create(cell.root, {
+      credits: false,
+      value: glyph,
+    });
+    return;
+  }
+  cell.tick.value = glyph;
+}
+
+function destroyGrid(): void {
+  for (const row of cells) {
+    for (const cell of row) {
+      if (!cell.root) continue;
+      try {
+        window.Tick.DOM.destroy(cell.root);
+      } catch {
+        /* ignore */
+      }
     }
   }
-  tick = null;
-  tickRoot = null;
+  cells = [];
+}
+
+/** Scale PQINA glyphs to fill each flap (same visual weight as clock digits). */
+function syncCellFontSizes(): void {
+  const sample = cells[0]?.[0]?.root;
+  if (!sample) return;
+  const h = sample.clientHeight;
+  if (h < 4) return;
+  const px = Math.max(10, Math.floor(h * 0.94));
+  for (const row of cells) {
+    for (const cell of row) {
+      cell.root.style.fontSize = `${px}px`;
+    }
+  }
 }
 
 function buildGrid(host: HTMLElement): void {
-  destroyTick();
+  destroyGrid();
   host.replaceChildren();
-  cells = [];
-
-  const root = document.createElement('div');
-  root.className = 'tick split-tick';
-  root.dataset.credits = 'false';
-  root.setAttribute('aria-hidden', 'true');
+  if (!window.Tick?.DOM) return;
 
   for (let r = 0; r < SPLIT_ROWS; r++) {
     const row = document.createElement('div');
@@ -230,16 +230,20 @@ function buildGrid(host: HTMLElement): void {
     row.setAttribute('role', 'row');
     const rowCells: Cell[] = [];
     for (let c = 0; c < SPLIT_COLS; c++) {
-      const key = cellKey(r, c);
-      const span = document.createElement('span');
-      span.dataset.key = key;
-      span.dataset.view = 'flip';
-      span.dataset.style = 'rounded:panels';
-      span.className = 'split-flip';
-      span.setAttribute('role', 'gridcell');
-      row.appendChild(span);
+      const root = document.createElement('div');
+      root.className = 'tick split-flip';
+      root.dataset.credits = 'false';
+      root.setAttribute('role', 'gridcell');
+      root.setAttribute('aria-hidden', 'true');
+      root.innerHTML = `<span data-view="flip" data-style="rounded:panels"></span>`;
+      row.appendChild(root);
+      const tick = window.Tick.DOM.create(root, {
+        credits: false,
+        value: displayChar(' '),
+      });
       rowCells.push({
-        key,
+        root,
+        tick,
         current: ' ',
         target: ' ',
         busy: false,
@@ -247,16 +251,11 @@ function buildGrid(host: HTMLElement): void {
       });
     }
     cells.push(rowCells);
-    root.appendChild(row);
+    host.appendChild(row);
   }
 
-  host.appendChild(root);
-  tickRoot = root;
-  livePayload = blankPayload();
-  if (!window.Tick?.DOM) return;
-  tick = window.Tick.DOM.create(root, {
-    credits: false,
-    value: { ...livePayload },
+  requestAnimationFrame(() => {
+    syncCellFontSizes();
   });
 }
 
@@ -272,27 +271,22 @@ async function rotateCellAirport(cell: Cell, targetRaw: string): Promise<void> {
   }
 
   const base = stepsBetween(cell.current, target);
-  /* Keep airport feel but cap extras — each step is a full PQINA 3D flip. */
+  /* Cap intermediate PQINA flips so a page change stays watchable. */
   let remaining =
-    base === 0
-      ? 0
-      : Math.min(base, 1 + Math.floor(Math.random() * 3) + Math.floor(Math.random() * 2));
+    base <= 1 ? 1 : Math.min(base, 2 + Math.floor(Math.random() * 3));
 
   while (remaining > 0) {
     if (cell.gen !== gen) return;
     remaining -= 1;
     const next = remaining === 0 ? target : nextChar(cell.current);
-    setCellValue(cell.key, next);
-    cell.current = next;
+    setCellValue(cell, next, true);
     await delay(FLIP_STEP_MS);
     if (cell.gen !== gen) return;
   }
 
   if (cell.gen === gen) {
-    setCellValue(cell.key, target);
-    cell.current = target;
+    setCellValue(cell, target, true);
     cell.busy = false;
-    await delay(FLIP_STEP_MS);
   }
 }
 
@@ -306,11 +300,12 @@ function anyCellBusy(): boolean {
 }
 
 async function showPage(index: number, animate: boolean): Promise<void> {
-  if (!state.pages.length || !tick) return;
+  if (!state.pages.length || !cells.length) return;
   const gen = ++pageGen;
   pageIndex = ((index % state.pages.length) + state.pages.length) % state.pages.length;
   const page = state.pages[pageIndex] ?? blankPage();
   syncPageIndicator();
+  syncCellFontSizes();
 
   if (!animate) {
     for (let r = 0; r < SPLIT_ROWS; r++) {
@@ -321,11 +316,10 @@ async function showPage(index: number, animate: boolean): Promise<void> {
         cell.gen += 1;
         cell.busy = false;
         const ch = normalizeChar(line[c] ?? ' ');
-        cell.current = ch;
         cell.target = ch;
+        setCellValue(cell, ch, false);
       }
     }
-    applyPayload(pagePayload(page));
     flipping = false;
     return;
   }
@@ -342,7 +336,7 @@ async function showPage(index: number, animate: boolean): Promise<void> {
         cell.target = ch;
         continue;
       }
-      const startDelay = Math.floor(Math.random() * 420) + c * 16 + r * 24;
+      const startDelay = Math.floor(Math.random() * 380) + c * 14 + r * 22;
       jobs.push(
         (async () => {
           await delay(startDelay);
@@ -355,16 +349,14 @@ async function showPage(index: number, animate: boolean): Promise<void> {
 
   await Promise.all(jobs);
   if (gen !== pageGen) return;
-  /* Safety: settle any stragglers to the page payload. */
-  applyPayload(pagePayload(page));
   for (let r = 0; r < SPLIT_ROWS; r++) {
     const line = page[r] ?? ' '.repeat(SPLIT_COLS);
     for (let c = 0; c < SPLIT_COLS; c++) {
       const cell = cells[r]?.[c];
       if (!cell) continue;
       const ch = normalizeChar(line[c] ?? ' ');
-      cell.current = ch;
       cell.target = ch;
+      if (cell.current !== ch) setCellValue(cell, ch, true);
       cell.busy = false;
     }
   }
@@ -407,7 +399,6 @@ function startRotation(): void {
   scheduleNextPage();
 }
 
-/** Largest preset that fits the viewport; otherwise scale 1920×1080 down. */
 function liveBoardSize(): { w: number; h: number } {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
@@ -430,6 +421,7 @@ function applyLiveBoardSize(): void {
     stage.style.removeProperty('--split-live-h');
     stage.style.removeProperty('width');
     stage.style.removeProperty('height');
+    requestAnimationFrame(() => syncCellFontSizes());
     return;
   }
   const { w, h } = liveBoardSize();
@@ -437,6 +429,7 @@ function applyLiveBoardSize(): void {
   stage.style.setProperty('--split-live-h', `${h}px`);
   stage.style.width = `${w}px`;
   stage.style.height = `${h}px`;
+  requestAnimationFrame(() => syncCellFontSizes());
 }
 
 function fillEditorFields(): void {
@@ -511,19 +504,29 @@ function selectEditPage(next: number): void {
   persist();
 }
 
+function syncLiveChromeLabel(): void {
+  if (!liveChromeBtn) return;
+  liveChromeBtn.setAttribute('aria-pressed', live ? 'true' : 'false');
+  liveChromeBtn.setAttribute('aria-label', t(live ? 'split.exitLive' : 'split.live'));
+  liveChromeBtn.setAttribute('label', t(live ? 'split.exitLive' : 'split.live'));
+  const label = liveChromeBtn.querySelector('[data-live-label]');
+  if (label) label.textContent = t(live ? 'split.exitLive' : 'split.live');
+}
+
+function setLiveChromeVisible(on: boolean): void {
+  if (!liveChromeBtn) return;
+  liveChromeBtn.hidden = !on;
+  liveChromeBtn.toggleAttribute('hidden', !on);
+}
+
 function setLive(on: boolean): void {
   live = on;
   document.body.classList.toggle('split-live', on);
   document.documentElement.classList.toggle('split-live', on);
   pageRoot?.classList.toggle('is-live', on);
-  const liveBtn = document.getElementById('split-live');
   const exitBtn = document.getElementById('split-live-exit');
-  if (liveBtn) {
-    liveBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
-    const label = liveBtn.querySelector('[data-live-label]');
-    if (label) label.textContent = t(on ? 'split.exitLive' : 'split.live');
-  }
   if (exitBtn) exitBtn.hidden = !on;
+  syncLiveChromeLabel();
   applyLiveBoardSize();
   if (on) {
     void document.documentElement.requestFullscreen?.().catch(() => {
@@ -545,7 +548,35 @@ function onKeydown(event: KeyboardEvent): void {
 }
 
 function onResize(): void {
-  if (live) applyLiveBoardSize();
+  applyLiveBoardSize();
+  syncCellFontSizes();
+}
+
+function ensureLiveChromeButton(): void {
+  const chrome = document.getElementById('chrome-top');
+  if (!chrome) return;
+
+  let btn = document.getElementById('split-live');
+  if (!btn) {
+    btn = document.createElement('k3-button');
+    btn.id = 'split-live';
+    btn.className = 'split-live-btn';
+    btn.setAttribute('variant', 'filled');
+    btn.setAttribute('size', 'sm');
+    btn.setAttribute('aria-pressed', 'false');
+    btn.innerHTML = `${msIcon('live_tv')}<span data-live-label>${t('split.live')}</span>`;
+    const locale = document.getElementById('locale-menu');
+    if (locale?.parentElement === chrome) {
+      chrome.insertBefore(btn, locale);
+    } else {
+      chrome.insertBefore(btn, chrome.firstChild);
+    }
+    btn.addEventListener('k3-click', () => setLive(!live));
+    sealLigatures(btn);
+  }
+  liveChromeBtn = btn;
+  syncLiveChromeLabel();
+  setLiveChromeVisible(false);
 }
 
 /** Mount the Split board page with on-page settings + live mode. */
@@ -568,9 +599,6 @@ export function mountSplitPage(page: HTMLElement): {
         </div>
         <div class="split-header-actions">
           <span id="split-page-indicator" class="split-page-indicator"></span>
-          <k3-button id="split-live" class="split-live-btn" variant="filled" size="sm" aria-pressed="false">
-            ${msIcon('live_tv')}<span data-live-label>${t('split.live')}</span>
-          </k3-button>
         </div>
       </header>
 
@@ -623,6 +651,7 @@ export function mountSplitPage(page: HTMLElement): {
   const grid = document.getElementById('split-grid');
   if (grid) buildGrid(grid);
   fillEditorFields();
+  ensureLiveChromeButton();
   void showPage(0, false);
   sealLigatures(page);
 
@@ -643,7 +672,6 @@ export function mountSplitPage(page: HTMLElement): {
     persist();
     startRotation();
   });
-  document.getElementById('split-live')?.addEventListener('k3-click', () => setLive(!live));
   document.getElementById('split-live-exit')?.addEventListener('k3-click', () => setLive(false));
   window.addEventListener('keydown', onKeydown);
   window.addEventListener('resize', onResize);
@@ -652,8 +680,12 @@ export function mountSplitPage(page: HTMLElement): {
     show: () => {
       visible = true;
       page.hidden = false;
+      ensureLiveChromeButton();
+      setLiveChromeVisible(true);
+      syncLiveChromeLabel();
       fillEditorFields();
       stopRotation();
+      requestAnimationFrame(() => syncCellFontSizes());
       void (async () => {
         await showPage(pageIndex, true);
         if (visible) startRotation();
@@ -662,6 +694,7 @@ export function mountSplitPage(page: HTMLElement): {
     hide: () => {
       visible = false;
       setLive(false);
+      setLiveChromeVisible(false);
       page.hidden = true;
       stopRotation();
       pageGen += 1;

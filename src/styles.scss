@@ -945,8 +945,7 @@ k3-nav-rail:not(:defined) {
   box-sizing: border-box;
   overflow: hidden;
 }
-.split-grid,
-.split-tick {
+.split-grid {
   display: flex;
   flex-direction: column;
   gap: var(--split-gap);
@@ -967,9 +966,22 @@ k3-nav-rail:not(:defined) {
   min-height: 0;
   align-items: stretch;
 }
-.split-page .split-flip,
-.split-page .tick-flip {
+/* One PQINA Tick root per flap — font-size set in JS to fill the cell */
+.split-page .split-flip.tick {
   position: relative;
+  display: block !important;
+  margin: 0 !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  line-height: 1;
+  color: var(--flip-digit);
+  font-family: fliqlo, 'Google Sans', system-ui, sans-serif;
+  font-weight: 700;
+}
+.split-page .split-flip .tick-flip {
+  position: absolute !important;
+  inset: 0 !important;
   display: block !important;
   flex: none;
   margin: 0 !important;
@@ -982,7 +994,6 @@ k3-nav-rail:not(:defined) {
   overflow: hidden;
   background: #000;
   box-shadow: 0 0 12px var(--flip-shadow);
-  font-size: clamp(0.65rem, 2.1vw, 1.55rem);
 }
 .split-page .tick-flip-panel {
   color: var(--flip-digit);
@@ -1023,10 +1034,20 @@ k3-nav-rail:not(:defined) {
 }
 .split-page .tick-flip-panel-front-text .tick-flip-panel-text-wrapper,
 .split-page .tick-flip-panel-back-text .tick-flip-panel-text-wrapper {
+  /* Match clock optical center; letters share the same fliqlo metrics as digits */
   transform: translateY(0.07em);
 }
 .split-page .tick-flip-spacer {
   line-height: 1;
+  /* Stretch spacer to the forced card box so glyphs scale with font-size */
+  width: 100%;
+  height: 100%;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+}
+.split-live-btn {
+  flex-shrink: 0;
 }
 .split-editor-hint {
   margin: 0;
@@ -1124,13 +1145,11 @@ body.split-live .split-stage {
   max-height: min(100vh, 1440px);
   flex: 0 0 auto;
 }
-body.split-live .split-grid,
-body.split-live .split-tick {
+body.split-live .split-grid {
   width: 100%;
   height: 100%;
 }
-body.split-live .split-page .tick-flip {
-  font-size: clamp(0.9rem, 2.6vmin, 2.4rem);
+body.split-live .split-page .split-flip .tick-flip {
   box-shadow: 0 0 18px var(--flip-shadow);
 }
 @media (max-width: 900px) {
