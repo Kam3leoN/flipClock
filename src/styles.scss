@@ -872,15 +872,17 @@ k3-nav-rail:not(:defined) {
   max-height: 600px;
 }
 
-/* —— Split board (airport 8×24, PQINA 3D flaps) —— */
+/* —— Split board — Solari / airport mechanical flaps
+   Visual language aligned with https://flip-flap-display.vercel.app —— */
 .split-page {
-  --split-radius-outer: 12px;
-  --split-radius-inner: 6px;
-  --split-gap: 3px;
-  --split-seam-gap: 3px;
-  --flip-leaf-h: calc(50% - (var(--split-seam-gap) / 2));
+  --sf-flap: #161616;
+  --sf-flap-hi: #1e1e1e;
+  --sf-flap-lo: #101010;
+  --sf-text: #f2f2f2;
+  --sf-gap: 3px;
+  --sf-radius: 3px;
+  --sf-board: #0c0c0c;
   position: relative;
-  font-family: fliqlo, 'Google Sans', system-ui, sans-serif;
 }
 .split-header {
   display: flex;
@@ -941,111 +943,198 @@ k3-nav-rail:not(:defined) {
   display: flex;
   align-items: stretch;
   justify-content: stretch;
-  padding: 0.5rem;
+  padding: 1rem;
   box-sizing: border-box;
   overflow: hidden;
+  background: var(--sf-board);
+  border: 1.2px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  margin: 0.75rem 0.75rem 0.75rem 0;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.85);
 }
 .split-grid {
   display: flex;
   flex-direction: column;
-  gap: var(--split-gap);
+  gap: var(--sf-gap);
   width: 100%;
   height: 100%;
-  max-width: none;
   flex: 1 1 auto;
   min-height: 0;
-  color: var(--flip-digit);
-  font-weight: 700;
-  line-height: 1;
 }
 .split-row {
   display: grid;
   grid-template-columns: repeat(24, minmax(0, 1fr));
-  gap: var(--split-gap);
+  gap: var(--sf-gap);
   flex: 1 1 0;
   min-height: 0;
   align-items: stretch;
+  container-type: size;
 }
-/* One PQINA Tick root per flap — font-size set in JS to fill the cell */
-.split-page .split-flip.tick {
+
+/* Mechanical unit — top/bottom halves + swinging flap */
+.sf-unit {
   position: relative;
-  display: block !important;
-  margin: 0 !important;
-  min-width: 0 !important;
-  width: 100% !important;
-  height: 100% !important;
-  line-height: 1;
-  color: var(--flip-digit);
-  font-family: fliqlo, 'Google Sans', system-ui, sans-serif;
-  font-weight: 700;
-}
-.split-page .split-flip .tick-flip {
-  position: absolute !important;
-  inset: 0 !important;
-  display: block !important;
-  flex: none;
-  margin: 0 !important;
-  min-width: 0 !important;
-  width: 100% !important;
-  height: 100% !important;
-  border-radius: var(--split-radius-outer);
-  letter-spacing: 0 !important;
-  text-indent: 0 !important;
-  overflow: hidden;
-  background: #000;
-  box-shadow: 0 0 12px var(--flip-shadow);
-}
-.split-page .tick-flip-panel {
-  color: var(--flip-digit);
-  background-color: var(--flip-face-top);
-}
-.split-page .tick-flip-panel-back {
-  background-color: var(--flip-face-bottom);
-}
-.split-page .tick-flip-panel-front,
-.split-page .tick-flip-shadow-top {
-  height: 50% !important;
-  top: 0 !important;
-  clip-path: inset(0 0 calc(var(--split-seam-gap) / 2) 0 round var(--split-radius-outer));
-}
-.split-page .tick-flip-panel-back,
-.split-page .tick-flip-shadow-bottom {
-  height: 50% !important;
-  top: 50% !important;
-  clip-path: inset(calc(var(--split-seam-gap) / 2) 0 0 0 round var(--split-radius-outer));
-}
-.split-page .tick-flip-front,
-.split-page .tick-flip-shadow-top,
-.split-page .tick-flip-panel-front,
-.split-page [data-style*='rounded:panels'] .tick-flip-front,
-.split-page [data-style*='rounded:panels'] .tick-flip-shadow-bottom {
-  border-radius: var(--split-radius-outer) var(--split-radius-outer) var(--split-radius-inner)
-    var(--split-radius-inner) !important;
-}
-.split-page .tick-flip-back,
-.split-page .tick-flip-shadow-bottom,
-.split-page .tick-flip-panel-back,
-.split-page .tick-flip-panel-back::after,
-.split-page [data-style*='rounded:panels'] .tick-flip-back,
-.split-page [data-style*='rounded:panels'] .tick-flip-shadow-top,
-.split-page [data-style*='rounded:panels'] .tick-flip-panel-back::after {
-  border-radius: var(--split-radius-inner) var(--split-radius-inner) var(--split-radius-outer)
-    var(--split-radius-outer) !important;
-}
-.split-page .tick-flip-panel-front-text .tick-flip-panel-text-wrapper,
-.split-page .tick-flip-panel-back-text .tick-flip-panel-text-wrapper {
-  /* Match clock optical center; letters share the same fliqlo metrics as digits */
-  transform: translateY(0.07em);
-}
-.split-page .tick-flip-spacer {
-  line-height: 1;
-  /* Stretch spacer to the forced card box so glyphs scale with font-size */
   width: 100%;
   height: 100%;
-  display: flex !important;
+  min-width: 0;
+  min-height: 0;
+  border-radius: var(--sf-radius);
+  perspective: 420px;
+  transform-style: preserve-3d;
+  background: #000;
+  overflow: hidden;
+}
+.sf-half {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 50%;
+  overflow: hidden;
+  background: linear-gradient(180deg, var(--sf-flap-hi), var(--sf-flap-lo));
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.4);
+}
+.sf-half--top {
+  top: 0;
+  border-radius: var(--sf-radius) var(--sf-radius) 0 0;
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.sf-half--bot {
+  top: 50%;
+  border-radius: 0 0 var(--sf-radius) var(--sf-radius);
+}
+.sf-char {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
   align-items: center;
   justify-content: center;
+  width: 100%;
+  height: 200%;
+  margin: 0;
+  padding: 0;
+  color: var(--sf-text);
+  font-family: 'Courier New', Courier, ui-monospace, monospace;
+  font-weight: 700;
+  font-size: 72cqh; /* fills flap like the Flutter reference (unitHeight * 0.72) */
+  line-height: 1;
+  letter-spacing: 0;
+  text-indent: 0;
+  user-select: none;
+  pointer-events: none;
 }
+.sf-half--top .sf-char {
+  top: 0;
+}
+.sf-half--bot .sf-char {
+  top: -100%;
+}
+.sf-unit.is-blank .sf-char {
+  opacity: 0;
+}
+.sf-hinge {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  margin-top: -0.5px;
+  background: #000;
+  z-index: 4;
+  pointer-events: none;
+}
+.sf-hinge::before,
+.sf-hinge::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 2.4px;
+  height: 2.4px;
+  margin-top: -1.2px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+}
+.sf-hinge::before {
+  left: 1.2px;
+}
+.sf-hinge::after {
+  right: 1.2px;
+}
+
+/* Swinging leaf — rotateX through π like Solari hardware */
+.sf-swing {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 50%;
+  z-index: 5;
+  transform-origin: center bottom;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+}
+.sf-swing-face {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: linear-gradient(180deg, var(--sf-flap-hi), var(--sf-flap-lo));
+  backface-visibility: hidden;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.45);
+}
+.sf-swing-face--front {
+  border-radius: var(--sf-radius) var(--sf-radius) 0 0;
+  transform: rotateX(0deg);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.sf-swing-face--back {
+  border-radius: 0 0 var(--sf-radius) var(--sf-radius);
+  transform: rotateX(180deg);
+}
+.sf-swing-face .sf-char {
+  font-size: 72cqh;
+}
+.sf-swing-face--front .sf-char {
+  top: 0;
+  height: 200%;
+}
+.sf-swing-face--back .sf-char {
+  top: -100%;
+  height: 200%;
+}
+.sf-swing.is-flipping {
+  animation: sf-solari-flip 75ms linear forwards;
+}
+.sf-unit.is-flipping .sf-swing.is-flipping::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.35);
+  animation: sf-solari-shade 75ms linear forwards;
+}
+@keyframes sf-solari-flip {
+  from {
+    transform: rotateX(0deg);
+  }
+  to {
+    transform: rotateX(-180deg);
+  }
+}
+@keyframes sf-solari-shade {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 .split-live-btn {
   flex-shrink: 0;
 }
@@ -1120,7 +1209,7 @@ body.split-live .split-page {
   margin: 0 !important;
   padding: 0 !important;
   border: 0 !important;
-  background: #000 !important;
+  background: #020202 !important;
   z-index: 10000;
   display: flex !important;
   align-items: center;
@@ -1138,19 +1227,18 @@ body.split-live .split-body {
 body.split-live .split-stage {
   position: relative !important;
   inset: auto !important;
-  padding: 0 !important;
+  margin: 0 !important;
+  padding: 1.25rem !important;
   width: var(--split-live-w, min(100vw, 1920px)) !important;
   height: var(--split-live-h, min(100vh, 1080px)) !important;
   max-width: min(100vw, 2560px);
   max-height: min(100vh, 1440px);
   flex: 0 0 auto;
+  border-radius: 28px;
 }
 body.split-live .split-grid {
   width: 100%;
   height: 100%;
-}
-body.split-live .split-page .split-flip .tick-flip {
-  box-shadow: 0 0 18px var(--flip-shadow);
 }
 @media (max-width: 900px) {
   .split-body {
@@ -1160,6 +1248,9 @@ body.split-live .split-page .split-flip .tick-flip {
   .split-settings {
     border-right: 0;
     border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  }
+  .split-stage {
+    margin: 0.5rem;
   }
 }
 

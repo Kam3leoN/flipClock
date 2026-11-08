@@ -1,24 +1,22 @@
 /**
- * Airport-style split-flap board — 8 × 24 PQINA 3D flaps, multi-page rotation, live mode.
+ * Airport Solari split-flap board (style: flip-flap-display / mechanical flaps).
+ * 8 × 24 cells, multi-page rotation, live mode. Not PQINA — true hinge flip + charset cascade.
  */
-import '../vendor/pqina-flip/flip.css';
-import '../vendor/pqina-flip/flip.min.js';
 import { t } from './i18n';
 import { msIcon, sealLigatures } from './icons';
 
 export const SPLIT_ROWS = 8;
 export const SPLIT_COLS = 24;
-/** Characters the flaps can land on (space first = blank). */
-export const SPLIT_CHARSET =
-  " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-.:'!?@#&+/";
+/** Same family as https://flip-flap-display.vercel.app (space first = blank). */
+export const SPLIT_CHARSET = ' 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ.:-';
 
 const STORAGE_KEY = 'flipflap-split-board';
 const LEGACY_KEY = 'flipflap-split-lines';
 const DEFAULT_INTERVAL_SEC = 8;
 const MIN_INTERVAL_SEC = 3;
 const MAX_INTERVAL_SEC = 120;
-/** PQINA flip card duration (ms) — wait before next intermediate step. */
-const FLIP_STEP_MS = 1000;
+/** One mechanical flap step — matches reference ~75ms cascade. */
+const FLIP_STEP_MS = 75;
 const LIVE_PRESETS = [
   { w: 1920, h: 1080 },
   { w: 2560, h: 1440 },
@@ -28,7 +26,11 @@ type FieldEl = HTMLElement & { value: string };
 
 interface Cell {
   root: HTMLElement;
-  tick: TickInstance | null;
+  topChar: HTMLElement;
+  botChar: HTMLElement;
+  swing: HTMLElement;
+  swingFront: HTMLElement;
+  swingBack: HTMLElement;
   current: string;
   target: string;
   busy: boolean;
@@ -61,9 +63,8 @@ function normalizeChar(raw: string): string {
   return SPLIT_CHARSET.includes(c) ? c : ' ';
 }
 
-/** Visible glyph for PQINA spacer — NBSP keeps blank flaps sized like letters. */
-function displayChar(ch: string): string {
-  return ch === ' ' ? '\u00A0' : ch;
+function displayGlyph(ch: string): string {
+  return ch === ' ' ? '' : ch;
 }
 
 function padLine(raw: string): string {
@@ -169,93 +170,41 @@ function delay(ms: number): Promise<void> {
   });
 }
 
-function setCellValue(cell: Cell, ch: string, animate: boolean): void {
-  const next = normalizeChar(ch);
-  cell.current = next;
-  if (!cell.tick) return;
-  const glyph = displayChar(next);
-  if (!animate) {
-    /* Destroy/recreate skips the 3D tween for instant paint. */
-    try {
-      window.Tick.DOM.destroy(cell.root);
-    } catch {
-      /* ignore */
-    }
-    cell.root.innerHTML = `<span data-view="flip" data-style="rounded:panels"></span>`;
-    cell.tick = window.Tick.DOM.create(cell.root, {
-      credits: false,
-      value: glyph,
-    });
-    return;
-  }
-  cell.tick.value = glyph;
+function paintStatic(cell: Cell, ch: string): void {
+  const glyph = displayGlyph(ch);
+  cell.topChar.textContent = glyph;
+  cell.botChar.textContent = glyph;
+  cell.root.classList.toggle('is-blank', ch === ' ');
+  cell.current = ch;
 }
 
-function destroyGrid(): void {
-  for (const row of cells) {
-    for (const cell of row) {
-      if (!cell.root) continue;
-      try {
-        window.Tick.DOM.destroy(cell.root);
-      } catch {
-        /* ignore */
-      }
-    }
-  }
-  cells = [];
-}
+function flipOnce(cell: Cell, from: string, to: string): Promise<void> {
+  return new Promise((resolve) => {
+    const fromG = displayGlyph(from);
+    const toG = displayGlyph(to);
 
-/** Scale PQINA glyphs to fill each flap (same visual weight as clock digits). */
-function syncCellFontSizes(): void {
-  const sample = cells[0]?.[0]?.root;
-  if (!sample) return;
-  const h = sample.clientHeight;
-  if (h < 4) return;
-  const px = Math.max(10, Math.floor(h * 0.94));
-  for (const row of cells) {
-    for (const cell of row) {
-      cell.root.style.fontSize = `${px}px`;
-    }
-  }
-}
+    /* Behind the swing: next top + current bottom (Solari reveal). */
+    cell.topChar.textContent = toG;
+    cell.botChar.textContent = fromG;
+    cell.swingFront.textContent = fromG;
+    cell.swingBack.textContent = toG;
 
-function buildGrid(host: HTMLElement): void {
-  destroyGrid();
-  host.replaceChildren();
-  if (!window.Tick?.DOM) return;
+    cell.swing.classList.remove('is-flipping');
+    void cell.swing.offsetWidth;
+    cell.swing.hidden = false;
+    cell.swing.classList.add('is-flipping');
+    cell.root.classList.add('is-flipping');
 
-  for (let r = 0; r < SPLIT_ROWS; r++) {
-    const row = document.createElement('div');
-    row.className = 'split-row';
-    row.setAttribute('role', 'row');
-    const rowCells: Cell[] = [];
-    for (let c = 0; c < SPLIT_COLS; c++) {
-      const root = document.createElement('div');
-      root.className = 'tick split-flip';
-      root.dataset.credits = 'false';
-      root.setAttribute('role', 'gridcell');
-      root.setAttribute('aria-hidden', 'true');
-      root.innerHTML = `<span data-view="flip" data-style="rounded:panels"></span>`;
-      row.appendChild(root);
-      const tick = window.Tick.DOM.create(root, {
-        credits: false,
-        value: displayChar(' '),
-      });
-      rowCells.push({
-        root,
-        tick,
-        current: ' ',
-        target: ' ',
-        busy: false,
-        gen: 0,
-      });
-    }
-    cells.push(rowCells);
-    host.appendChild(row);
-  }
-
-  requestAnimationFrame(() => {
-    syncCellFontSizes();
+    const done = (): void => {
+      cell.swing.removeEventListener('animationend', done);
+      paintStatic(cell, to);
+      cell.swing.classList.remove('is-flipping');
+      cell.swing.hidden = true;
+      cell.root.classList.remove('is-flipping');
+      resolve();
+    };
+    cell.swing.addEventListener('animationend', done);
+    window.setTimeout(done, FLIP_STEP_MS + 20);
   });
 }
 
@@ -270,22 +219,22 @@ async function rotateCellAirport(cell: Cell, targetRaw: string): Promise<void> {
     return;
   }
 
-  const base = stepsBetween(cell.current, target);
-  /* Cap intermediate PQINA flips so a page change stays watchable. */
-  let remaining =
-    base <= 1 ? 1 : Math.min(base, 2 + Math.floor(Math.random() * 3));
+  let remaining = stepsBetween(cell.current, target);
+  /* Full forward-only cascade like a real board (cap very long wraps). */
+  if (remaining === 0) remaining = SPLIT_CHARSET.length;
+  remaining = Math.min(remaining, SPLIT_CHARSET.length);
 
   while (remaining > 0) {
     if (cell.gen !== gen) return;
     remaining -= 1;
-    const next = remaining === 0 ? target : nextChar(cell.current);
-    setCellValue(cell, next, true);
-    await delay(FLIP_STEP_MS);
+    const from = cell.current;
+    const next = remaining === 0 ? target : nextChar(from);
+    await flipOnce(cell, from, next);
     if (cell.gen !== gen) return;
   }
 
   if (cell.gen === gen) {
-    setCellValue(cell, target, true);
+    paintStatic(cell, target);
     cell.busy = false;
   }
 }
@@ -299,13 +248,57 @@ function anyCellBusy(): boolean {
   return false;
 }
 
+function buildGrid(host: HTMLElement): void {
+  host.replaceChildren();
+  cells = [];
+
+  for (let r = 0; r < SPLIT_ROWS; r++) {
+    const row = document.createElement('div');
+    row.className = 'split-row';
+    row.setAttribute('role', 'row');
+    const rowCells: Cell[] = [];
+    for (let c = 0; c < SPLIT_COLS; c++) {
+      const root = document.createElement('div');
+      root.className = 'sf-unit is-blank';
+      root.setAttribute('role', 'gridcell');
+      root.innerHTML = `
+        <div class="sf-half sf-half--top" aria-hidden="true"><span class="sf-char"></span></div>
+        <div class="sf-half sf-half--bot" aria-hidden="true"><span class="sf-char"></span></div>
+        <div class="sf-hinge" aria-hidden="true"></div>
+        <div class="sf-swing" hidden aria-hidden="true">
+          <div class="sf-swing-face sf-swing-face--front"><span class="sf-char"></span></div>
+          <div class="sf-swing-face sf-swing-face--back"><span class="sf-char"></span></div>
+        </div>`;
+      const topChar = root.querySelector('.sf-half--top .sf-char') as HTMLElement;
+      const botChar = root.querySelector('.sf-half--bot .sf-char') as HTMLElement;
+      const swing = root.querySelector('.sf-swing') as HTMLElement;
+      const swingFront = root.querySelector('.sf-swing-face--front .sf-char') as HTMLElement;
+      const swingBack = root.querySelector('.sf-swing-face--back .sf-char') as HTMLElement;
+      row.appendChild(root);
+      rowCells.push({
+        root,
+        topChar,
+        botChar,
+        swing,
+        swingFront,
+        swingBack,
+        current: ' ',
+        target: ' ',
+        busy: false,
+        gen: 0,
+      });
+    }
+    cells.push(rowCells);
+    host.appendChild(row);
+  }
+}
+
 async function showPage(index: number, animate: boolean): Promise<void> {
   if (!state.pages.length || !cells.length) return;
   const gen = ++pageGen;
   pageIndex = ((index % state.pages.length) + state.pages.length) % state.pages.length;
   const page = state.pages[pageIndex] ?? blankPage();
   syncPageIndicator();
-  syncCellFontSizes();
 
   if (!animate) {
     for (let r = 0; r < SPLIT_ROWS; r++) {
@@ -317,7 +310,7 @@ async function showPage(index: number, animate: boolean): Promise<void> {
         cell.busy = false;
         const ch = normalizeChar(line[c] ?? ' ');
         cell.target = ch;
-        setCellValue(cell, ch, false);
+        paintStatic(cell, ch);
       }
     }
     flipping = false;
@@ -336,7 +329,7 @@ async function showPage(index: number, animate: boolean): Promise<void> {
         cell.target = ch;
         continue;
       }
-      const startDelay = Math.floor(Math.random() * 380) + c * 14 + r * 22;
+      const startDelay = Math.floor(Math.random() * 280) + c * 12 + r * 18;
       jobs.push(
         (async () => {
           await delay(startDelay);
@@ -356,7 +349,7 @@ async function showPage(index: number, animate: boolean): Promise<void> {
       if (!cell) continue;
       const ch = normalizeChar(line[c] ?? ' ');
       cell.target = ch;
-      if (cell.current !== ch) setCellValue(cell, ch, true);
+      paintStatic(cell, ch);
       cell.busy = false;
     }
   }
@@ -421,7 +414,6 @@ function applyLiveBoardSize(): void {
     stage.style.removeProperty('--split-live-h');
     stage.style.removeProperty('width');
     stage.style.removeProperty('height');
-    requestAnimationFrame(() => syncCellFontSizes());
     return;
   }
   const { w, h } = liveBoardSize();
@@ -429,7 +421,6 @@ function applyLiveBoardSize(): void {
   stage.style.setProperty('--split-live-h', `${h}px`);
   stage.style.width = `${w}px`;
   stage.style.height = `${h}px`;
-  requestAnimationFrame(() => syncCellFontSizes());
 }
 
 function fillEditorFields(): void {
@@ -549,7 +540,6 @@ function onKeydown(event: KeyboardEvent): void {
 
 function onResize(): void {
   applyLiveBoardSize();
-  syncCellFontSizes();
 }
 
 function ensureLiveChromeButton(): void {
@@ -685,7 +675,6 @@ export function mountSplitPage(page: HTMLElement): {
       syncLiveChromeLabel();
       fillEditorFields();
       stopRotation();
-      requestAnimationFrame(() => syncCellFontSizes());
       void (async () => {
         await showPage(pageIndex, true);
         if (visible) startRotation();
