@@ -5,10 +5,12 @@
  */
 import '../vendor/pqina-flip/flip.css';
 import '../vendor/pqina-flip/flip.min.js';
+import { initFlapSound, playFlapClick } from './flap-sound';
 
 export type TimeFormat = 0 | 1 | 2;
 
 type TickHandle = TickInstance;
+type ClockPayload = { h0: string; h1: string; m0: string; m1: string };
 
 let tick: TickHandle | null = null;
 let host: HTMLElement | null = null;
@@ -16,6 +18,7 @@ let timer: TickTimer | null = null;
 let timeFormat: TimeFormat = 0;
 let showFlaps = true;
 let painted = false;
+let lastPayload: ClockPayload | null = null;
 
 function formatHour(format: TimeFormat, hour: number): string {
   if (format === 0) {
@@ -31,12 +34,7 @@ function formatMinute(minute: number): string {
 }
 
 /** Four single-character keys — never pass multi-digit strings to one flip view. */
-function clockPayload(now = new Date()): {
-  h0: string;
-  h1: string;
-  m0: string;
-  m1: string;
-} {
+function clockPayload(now = new Date()): ClockPayload {
   const hh = formatHour(timeFormat, now.getHours());
   const mm = formatMinute(now.getMinutes());
   return {
@@ -45,6 +43,14 @@ function clockPayload(now = new Date()): {
     m0: mm[0] ?? '0',
     m1: mm[1] ?? '0',
   };
+}
+
+function playClockFlips(prev: ClockPayload | null, next: ClockPayload): void {
+  if (!prev) return;
+  const keys: (keyof ClockPayload)[] = ['h0', 'h1', 'm0', 'm1'];
+  for (const key of keys) {
+    if (prev[key] !== next[key]) playFlapClick();
+  }
 }
 
 function markup(): string {
@@ -87,14 +93,20 @@ function mountTick(): void {
   syncFlapsClass();
   const root = host.querySelector<HTMLElement>('.tick');
   if (!root || !window.Tick?.DOM) return;
+  const initial = clockPayload();
+  lastPayload = initial;
   tick = window.Tick.DOM.create(root, {
     credits: false,
-    value: clockPayload(),
+    value: initial,
   });
   painted = true;
+  void initFlapSound();
   timer = window.Tick.helper.interval(() => {
     if (!tick) return;
-    tick.value = clockPayload();
+    const next = clockPayload();
+    playClockFlips(lastPayload, next);
+    lastPayload = next;
+    tick.value = next;
   }, 1000);
 }
 
@@ -124,7 +136,9 @@ export function refreshClock(): void {
     mountTick();
     return;
   }
-  tick.value = clockPayload();
+  const next = clockPayload();
+  lastPayload = next;
+  tick.value = next;
 }
 
 export function isClockReady(): boolean {

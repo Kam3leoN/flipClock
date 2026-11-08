@@ -25,6 +25,7 @@ import {
   setClockTimeFormat,
   type TimeFormat as ClockTimeFormat,
 } from './clock';
+import { unlockFlapSound } from './flap-sound';
 import {
   applyExpressiveTheme,
   COLOR_VARIANTS,
@@ -1017,6 +1018,15 @@ function mountChromeUi(): void {
     const v = event.detail?.value;
     if (v && isAppLocale(v)) changeLocale(v);
   }) as EventListener);
+
+  /* Unlock flap audio on first gesture (clock + Split share the same pool). */
+  document.addEventListener(
+    'pointerdown',
+    () => {
+      unlockFlapSound();
+    },
+    { once: true, capture: true },
+  );
 
   requireEl('fullscreen-btn').addEventListener('k3-click', () => {
     void toggleFullscreen();
