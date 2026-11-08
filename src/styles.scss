@@ -688,9 +688,15 @@ k3-nav-rail:not(:defined) {
   display: none;
   min-width: 0;
   min-height: 0;
+  z-index: 1;
+  background: var(--md-sys-color-background);
 }
 .app-page.is-active:not([hidden]) {
   display: block;
+}
+#page-home {
+  z-index: 0;
+  background: transparent;
 }
 .page-panel {
   box-sizing: border-box;

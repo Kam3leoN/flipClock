@@ -1072,7 +1072,7 @@ function mountChromeUi(): void {
 
   const setNavPage = (index: number): void => {
     const rail = document.getElementById('app-nav-rail') as (HTMLElement & { active?: number }) | null;
-    if (rail && rail.active !== index) rail.active = index;
+    if (rail) rail.active = index;
     const app = document.querySelector('.app');
     const page = index === 1 ? 'birthdays' : index === 2 ? 'todos' : 'home';
     app?.setAttribute('data-page', page);
@@ -1100,11 +1100,26 @@ function mountChromeUi(): void {
     setHoverTimer();
   };
 
-  requireEl('app-nav-rail').addEventListener('k3-change', ((event: CustomEvent<{ index?: number }>) => {
-    const index = event.detail?.index ?? 0;
+  const onNavIndex = (index: number): void => {
     if (index === 0) goHome();
     else setNavPage(index);
+  };
+
+  requireEl('app-nav-rail').addEventListener('k3-change', ((event: CustomEvent<{ index?: number }>) => {
+    const index = typeof event.detail?.index === 'number' ? event.detail.index : 0;
+    onNavIndex(index);
   }) as EventListener);
+
+  /* Direct item clicks — reliable even when composed click path skips rail @click */
+  (
+    [
+      ['nav-home', 0],
+      ['nav-birthdays', 1],
+      ['nav-todos', 2],
+    ] as const
+  ).forEach(([id, index]) => {
+    requireEl(id).addEventListener('click', () => onNavIndex(index));
+  });
 
   requireEl('fab-flipclock').addEventListener('k3-click', () => {
     window.open(URL_FLIPFLAP, '_blank', 'noopener,noreferrer');
