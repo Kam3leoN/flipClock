@@ -85,7 +85,13 @@ interface FlipUnit {
   target?: Face;
   busy: boolean;
   startedAt: number;
+  /** Timer-driven flip phases (animationend is unreliable mid-flip in Chromium). */
+  timers: number[];
 }
+
+const FLIP_TOP_MS = 165;
+const FLIP_BOTTOM_MS = 165;
+const FLIP_BOTTOM_EXPRESSIVE_MS = 280;
 
 interface SegmentChangeDetail {
   indices: number[];
@@ -490,8 +496,6 @@ function refreshUiCopy(): void {
   const done = document.getElementById('settings-done');
   if (done) done.textContent = t('settings.done');
 
-  const fabSettings = document.getElementById('fab-settings');
-  if (fabSettings) fabSettings.textContent = t('menu.settings');
   const fabFlip = document.getElementById('fab-flipclock');
   if (fabFlip) fabFlip.textContent = t('menu.flipclock');
   const fabK3 = document.getElementById('fab-k3ui');
@@ -499,6 +503,13 @@ function refreshUiCopy(): void {
   const fabDocs = document.getElementById('fab-docs');
   if (fabDocs) fabDocs.textContent = t('menu.docs');
 
+  const rail = document.getElementById('app-nav-rail');
+  rail?.setAttribute('aria-label', t('nav.label'));
+  const railFab = document.getElementById('rail-fab');
+  railFab?.setAttribute('aria-label', t('menu.settings'));
+  const railEFab = document.getElementById('rail-efab');
+  const railEFabLabel = railEFab?.querySelector('[data-i18n="menu.settings"]');
+  if (railEFabLabel) railEFabLabel.textContent = t('menu.settings');
   const navHome = document.getElementById('nav-home');
   if (navHome) navHome.setAttribute('label', t('nav.home'));
   const navBd = document.getElementById('nav-birthdays');
@@ -878,7 +889,8 @@ function mountChromeUi(): void {
       </k3-menu-item>`;
   }).join('');
 
-  document.body.insertAdjacentHTML(
+  const chromeHost = document.getElementById('shell-content') ?? document.body;
+  chromeHost.insertAdjacentHTML(
     'beforeend',
     `<div class="chrome-top" id="chrome-top">
       <k3-split-button
@@ -908,23 +920,19 @@ function mountChromeUi(): void {
         <span slot="selected-icon" class="ms notranslate" translate="no" lang="zxx" data-k3-icon="fullscreen_exit" aria-hidden="true"></span>
       </k3-icon-button>
     </div>
+    <footer id="site-credit" role="contentinfo" aria-label="Copyright"${showCredit ? '' : ' hidden'}>
+      <span data-i18n="credit.before">${t('credit.before')}</span>
+      <span class="heart" aria-hidden="true">${HEART_SVG}</span>
+      <span data-i18n="credit.after">${t('credit.after')}</span>
+    </footer>
+    <div id="prefs-toast" class="prefs-toast" role="status" aria-live="polite" hidden></div>`,
+  );
 
-    <k3-nav-rail
-      id="app-nav-rail"
-      class="app-nav-rail"
-      size="compact"
-      appearance="modal"
-      active="0"
-      aria-label="${t('nav.label')}"
-    >
-      <k3-nav-item id="nav-home" icon="home" label="${t('nav.home')}" active></k3-nav-item>
-      <k3-nav-item id="nav-birthdays" icon="cake" label="${t('nav.birthdays')}"></k3-nav-item>
-      <k3-nav-item id="nav-todos" icon="checklist" label="${t('nav.todos')}"></k3-nav-item>
-    </k3-nav-rail>
-
-    <k3-fab-menu id="app-fab-menu" class="settings-trigger" fixed size="default" variant="primary" placement="bottom-end" aria-label="${t('menu.open')}" data-i18n-aria="menu.open">
+  /* Overlays elevate to body (above the rail) — same pattern as k3ui playground. */
+  document.body.insertAdjacentHTML(
+    'beforeend',
+    `<k3-fab-menu id="app-fab-menu" class="settings-trigger" fixed size="default" variant="primary" placement="bottom-end" aria-label="${t('menu.open')}" data-i18n-aria="menu.open">
       <span slot="icon" class="ms notranslate" translate="no" lang="zxx" data-k3-icon="menu" aria-hidden="true"></span>
-      <k3-fab-menu-item id="fab-settings" icon="settings">${t('menu.settings')}</k3-fab-menu-item>
       <k3-fab-menu-item id="fab-flipclock" icon="code">${t('menu.flipclock')}</k3-fab-menu-item>
       <k3-fab-menu-item id="fab-k3ui" icon="widgets">${t('menu.k3ui')}</k3-fab-menu-item>
       <k3-fab-menu-item id="fab-docs" icon="menu_book">${t('menu.docs')}</k3-fab-menu-item>
@@ -1072,14 +1080,7 @@ function mountChromeUi(): void {
         </div>
       </div>
       <k3-button slot="actions" id="settings-done" variant="filled" size="sm" data-i18n="settings.done">${t('settings.done')}</k3-button>
-    </k3-sheet>
-
-    <footer id="site-credit" role="contentinfo" aria-label="Copyright"${showCredit ? '' : ' hidden'}>
-      <span data-i18n="credit.before">${t('credit.before')}</span>
-      <span class="heart" aria-hidden="true">${HEART_SVG}</span>
-      <span data-i18n="credit.after">${t('credit.after')}</span>
-    </footer>
-    <div id="prefs-toast" class="prefs-toast" role="status" aria-live="polite" hidden></div>`,
+    </k3-sheet>`,
   );
 
   const sheet = requireEl('settings-sheet') as SheetEl;
@@ -1132,7 +1133,9 @@ function mountChromeUi(): void {
   document.addEventListener('fullscreenchange', () => syncFullscreenButton());
   syncFullscreenButton();
 
-  requireEl('fab-settings').addEventListener('k3-click', () => openSheet());
+  const openSettings = (): void => openSheet();
+  requireEl('rail-fab').addEventListener('k3-click', openSettings);
+  requireEl('rail-efab').addEventListener('k3-click', openSettings);
 
   /** 0 = FlipFlap, 1 = birthdays, 2 = todos */
   let navPage = 0;
@@ -1456,6 +1459,7 @@ function flapMarkup(kind: 'hur' | 'min'): string {
 
 /** (Re)build the flap DOM for the current digit mode. */
 function buildFlaps(): void {
+  for (const unit of flipUnits) clearFlipTimers(unit);
   const area = requireEl('main-content-area');
   area.classList.toggle('single', digitMode === 1);
   if (digitMode === 2) {
@@ -1485,19 +1489,41 @@ function buildFlaps(): void {
     for (const el of [topOrg, bottomOrg, topClone, bottomClone]) {
       el.appendChild(document.createElement('span'));
     }
-    const unit: FlipUnit = { key, topOrg, topClone, bottomOrg, bottomClone, busy: false, startedAt: 0 };
+    const unit: FlipUnit = {
+      key,
+      topOrg,
+      topClone,
+      bottomOrg,
+      bottomClone,
+      busy: false,
+      startedAt: 0,
+      timers: [],
+    };
     bindUnitAnimation(unit);
     return unit;
   });
   clockPainted = false;
 }
 
+function clearFlipTimers(unit: FlipUnit): void {
+  for (const id of unit.timers) window.clearTimeout(id);
+  unit.timers = [];
+}
+
+function bottomFlipMs(): number {
+  return document.documentElement.dataset.motion === 'expressive'
+    ? FLIP_BOTTOM_EXPRESSIVE_MS
+    : FLIP_BOTTOM_MS;
+}
+
 function finishFlip(unit: FlipUnit): void {
-  /* Update static faces BEFORE hiding the bottom clone — otherwise one frame
-     flashes the previous digit on the lower half (worst on 1-digit mode). */
+  clearFlipTimers(unit);
+  /* Paint every face to the target BEFORE parking the clones edge-on —
+     otherwise the lower half flashes the previous digit for a frame. */
   if (unit.target) {
-    applyFace(unit.topClone, unit.target);
-    applyFace(unit.bottomOrg, unit.target);
+    for (const el of [unit.topOrg, unit.bottomOrg, unit.topClone, unit.bottomClone]) {
+      applyFace(el, unit.target);
+    }
     unit.shown = unit.target;
   }
   unit.topClone.classList.remove('act', 'transform');
@@ -1505,35 +1531,44 @@ function finishFlip(unit: FlipUnit): void {
   unit.busy = false;
 }
 
+function bounceBottom(unit: FlipUnit): void {
+  unit.bottomOrg.classList.remove('hit');
+  void unit.bottomOrg.offsetWidth;
+  unit.bottomOrg.classList.add('hit');
+}
+
 function bindUnitAnimation(unit: FlipUnit): void {
-  unit.topClone.addEventListener('animationend', (event) => {
-    if (event.target !== unit.topClone || !unit.busy) return;
-    unit.topClone.classList.remove('act', 'transform');
-    if (unit.target) applyFace(unit.topClone, unit.target);
-    unit.bottomClone.classList.add('act', 'transform');
-  });
-
-  unit.bottomClone.addEventListener('animationend', (event) => {
-    if (event.target !== unit.bottomClone || !unit.busy) return;
-    finishFlip(unit);
-    /* Rebound on the flap behind — scale only, no opacity/filter */
-    unit.bottomOrg.classList.remove('hit');
-    void unit.bottomOrg.offsetWidth;
-    unit.bottomOrg.classList.add('hit');
-  });
-
   unit.bottomOrg.addEventListener('animationend', (event) => {
     if (event.target === unit.bottomOrg) unit.bottomOrg.classList.remove('hit');
   });
 }
 
 function flipTo(unit: FlipUnit, face: Face): void {
+  clearFlipTimers(unit);
   unit.busy = true;
   unit.startedAt = performance.now();
   unit.target = face;
+  /* Falling top clone must keep the OLD digit; static top + rising clone get NEW. */
+  if (unit.shown) applyFace(unit.topClone, unit.shown);
   applyFace(unit.topOrg, face);
   applyFace(unit.bottomClone, face);
+
   unit.topClone.classList.add('act', 'transform');
+
+  const topDone = window.setTimeout(() => {
+    if (!unit.busy || unit.target !== face) return;
+    applyFace(unit.topClone, face);
+    unit.topClone.classList.remove('act', 'transform');
+    unit.bottomClone.classList.add('act', 'transform');
+
+    const bottomDone = window.setTimeout(() => {
+      if (!unit.busy || unit.target !== face) return;
+      finishFlip(unit);
+      bounceBottom(unit);
+    }, bottomFlipMs());
+    unit.timers.push(bottomDone);
+  }, FLIP_TOP_MS);
+  unit.timers.push(topDone);
 }
 
 /** Clock heartbeat: paint immediately the first time, then flip changed flaps. */

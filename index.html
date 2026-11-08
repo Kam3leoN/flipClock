@@ -17,16 +17,40 @@
     />
   </head>
   <body>
-    <div id="bandeau-fr" class="bandeau gauche" aria-hidden="true"><i></i><i></i><i></i></div>
-    <div id="loader" aria-busy="true" aria-live="polite"></div>
-    <div id="clock-meta" class="clock-meta" hidden>
-      <time id="clock-date" datetime=""></time>
-      <p id="clock-saints" class="clock-saints" hidden></p>
-      <p id="clock-birthdays" class="clock-birthdays" role="status" hidden></p>
-    </div>
-    <div id="main">
-      <div id="main-content">
-        <div id="main-content-area" role="timer" aria-live="off" aria-atomic="true"></div>
+    <div class="app" data-nav="rail">
+      <k3-nav-rail
+        id="app-nav-rail"
+        class="shell-rail"
+        size="compact"
+        appearance="standard"
+        collapsible
+        active="0"
+      >
+        <k3-fab slot="fab" id="rail-fab" class="rail-fab-compact" size="default" variant="primary" aria-label="Settings">
+          <span slot="icon" class="ms notranslate" translate="no" lang="zxx" data-k3-icon="settings" aria-hidden="true"></span>
+        </k3-fab>
+        <k3-extended-fab slot="fab" id="rail-efab" class="rail-fab-extended" size="medium" variant="primary">
+          <span slot="icon" class="ms notranslate" translate="no" lang="zxx" data-k3-icon="settings" aria-hidden="true"></span>
+          <span data-i18n="menu.settings">Settings</span>
+        </k3-extended-fab>
+        <k3-nav-item id="nav-home" icon="home" label="FlipFlap" active></k3-nav-item>
+        <k3-nav-item id="nav-birthdays" icon="cake" label="Birthdays"></k3-nav-item>
+        <k3-nav-item id="nav-todos" icon="checklist" label="To-do"></k3-nav-item>
+      </k3-nav-rail>
+
+      <div class="shell-content" id="shell-content">
+        <div id="bandeau-fr" class="bandeau gauche" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div id="loader" aria-busy="true" aria-live="polite"></div>
+        <div id="clock-meta" class="clock-meta" hidden>
+          <time id="clock-date" datetime=""></time>
+          <p id="clock-saints" class="clock-saints" hidden></p>
+          <p id="clock-birthdays" class="clock-birthdays" role="status" hidden></p>
+        </div>
+        <div id="main">
+          <div id="main-content">
+            <div id="main-content-area" role="timer" aria-live="off" aria-atomic="true"></div>
+          </div>
+        </div>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

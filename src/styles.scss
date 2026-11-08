@@ -87,13 +87,12 @@ body {
   cursor: default;
 }
 
-/* Bandeau tricolore — un seul, à gauche, fondu vers le bas */
+/* Bandeau tricolore — un seul, à gauche du contenu (pas sous le rail) */
 .bandeau {
-  position: fixed;
+  position: absolute;
   top: 0;
   left: var(--bandeau-edge);
-  height: 100vh;
-  height: 100dvh;
+  height: 100%;
   z-index: 50;
   display: flex;
   pointer-events: none;
@@ -158,7 +157,7 @@ a {
   text-decoration: none;
 }
 #loader {
-  position: fixed;
+  position: absolute;
   display: block;
   width: 100%;
   height: 100%;
@@ -574,7 +573,7 @@ html[data-motion='expressive'] .flip.bottom.transform {
 }
 
 .clock-meta {
-  position: fixed;
+  position: absolute;
   top: max(24px, env(safe-area-inset-top, 0px));
   left: 50%;
   transform: translateX(-50%);
@@ -648,18 +647,38 @@ html[data-theme='light'] .feast--other {
   display: none !important;
 }
 
-/* Navigation rail — modal compact, left edge, above clock chrome */
-.app-nav-rail {
-  position: fixed;
-  top: 50%;
-  left: max(0.5rem, env(safe-area-inset-left, 0px));
-  transform: translateY(-50%);
-  z-index: 1150;
-  height: auto;
-  max-height: min(80dvh, 28rem);
-  --k3-nav-rail-bg: color-mix(in srgb, var(--md-sys-color-surface-container) 92%, transparent);
-  --k3-nav-rail-radius: var(--md-sys-shape-corner-extra-large, 28px);
-  box-shadow: 0 8px 28px color-mix(in srgb, var(--md-sys-color-shadow) 35%, transparent);
+/* Shell — same layout contract as k3ui-expressive playground (rail + content) */
+.app {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: 1fr;
+  width: 100%;
+  height: 100%;
+  min-height: 100dvh;
+  overflow: hidden;
+}
+.app[data-nav='rail'] .shell-rail {
+  display: block;
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  grid-column: 1;
+  grid-row: 1;
+  z-index: 30;
+}
+.app[data-nav='rail'] .shell-content {
+  grid-column: 2;
+  grid-row: 1;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  height: 100dvh;
+  overflow: hidden;
+}
+k3-nav-rail:not(:defined) {
+  display: block;
+  inline-size: 6.5rem;
+  overflow: hidden;
 }
 
 /*
@@ -846,7 +865,7 @@ body.settings-open k3-fab-menu.settings-trigger:not([data-k3-overlay-concealed])
 }
 
 .chrome-top {
-  position: fixed;
+  position: absolute;
   top: max(1rem, env(safe-area-inset-top, 0px));
   inset-inline-end: max(1rem, env(safe-area-inset-right, 0px));
   z-index: 120;
