@@ -872,7 +872,7 @@ k3-nav-rail:not(:defined) {
   max-height: 600px;
 }
 
-/* —— Split board (airport 8×32) —— */
+/* —— Split board (airport 8×24, full bleed) —— */
 .split-page {
   --split-radius-outer: 12px;
   --split-radius-inner: 6px;
@@ -889,27 +889,41 @@ k3-nav-rail:not(:defined) {
 .split-header-text {
   min-width: 0;
 }
+.split-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+.split-page-indicator {
+  font-size: 0.8rem;
+  color: var(--md-sys-color-on-surface-variant);
+  white-space: nowrap;
+}
 .split-stage {
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem 1.25rem 1.5rem;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 0.5rem 0.5rem 0.75rem;
   box-sizing: border-box;
-  overflow: auto;
+  overflow: hidden;
+  width: 100%;
 }
 .split-grid {
   display: flex;
   flex-direction: column;
   gap: var(--split-gap);
-  width: min(100%, 1120px);
-  aspect-ratio: 32 / 10;
-  max-height: 100%;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  flex: 1 1 auto;
 }
 .split-row {
   display: grid;
-  grid-template-columns: repeat(32, minmax(0, 1fr));
+  grid-template-columns: repeat(24, minmax(0, 1fr));
   gap: var(--split-gap);
   flex: 1 1 0;
   min-height: 0;
@@ -926,7 +940,7 @@ k3-nav-rail:not(:defined) {
   color: var(--split-cell-fg);
   font-family: fliqlo, 'Google Sans', system-ui, sans-serif;
   font-weight: 700;
-  font-size: clamp(0.55rem, 1.6vw, 1.15rem);
+  font-size: clamp(0.7rem, 2.8vw, 1.65rem);
   line-height: 1;
   overflow: hidden;
   box-shadow: inset 0 1px rgba(255, 255, 255, 0.06);
@@ -976,7 +990,7 @@ k3-nav-rail:not(:defined) {
     var(--split-radius-outer);
 }
 .split-cell.is-flipping .split-cell-face {
-  animation: split-flap-spin 0.18s var(--md-sys-motion-easing-emphasized, ease-in) forwards;
+  animation: split-flap-spin 0.16s var(--md-sys-motion-easing-emphasized, ease-in) forwards;
 }
 @keyframes split-flap-spin {
   0% {
@@ -996,18 +1010,46 @@ k3-nav-rail:not(:defined) {
     opacity: 1;
   }
 }
+.split-edit-fab {
+  position: absolute;
+  right: max(0.75rem, env(safe-area-inset-right, 0px));
+  bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+  z-index: 5;
+}
+.split-editor::part(content) {
+  max-height: min(70dvh, 36rem);
+}
 .split-editor-body {
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding: 4px 0 8px;
   text-align: left;
+  max-height: min(58dvh, 30rem);
+  overflow: auto;
   --k3ui-field-outlined-notch-bg: var(--md-sys-color-surface);
+  --k3-scroll-track-inset: 0.5rem;
 }
 .split-editor-hint {
   margin: 0;
   font-size: 0.85rem;
   color: var(--md-sys-color-on-surface-variant);
+}
+.split-interval-field {
+  width: 100%;
+  max-width: 12rem;
+  --k3-text-field-max-width: none;
+}
+.split-page-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+.split-page-select {
+  flex: 1 1 10rem;
+  min-width: 0;
+  --k3-text-field-max-width: none;
 }
 .split-line-field {
   width: 100%;

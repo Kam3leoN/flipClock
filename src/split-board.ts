@@ -1,17 +1,20 @@
 /**
- * Airport-style split-flap board — 8 × 32 cells with charset rotation.
+ * Airport-style split-flap board — 8 × 24 cells, multi-page rotation.
  */
 import { t } from './i18n';
 import { msIcon, sealLigatures } from './icons';
 
 export const SPLIT_ROWS = 8;
-export const SPLIT_COLS = 32;
+export const SPLIT_COLS = 24;
 /** Characters the flaps can land on (space first = blank). */
 export const SPLIT_CHARSET =
   " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-.:'!?@#&+/";
 
-const STORAGE_KEY = 'flipflap-split-lines';
-const STEP_MS = 42;
+const STORAGE_KEY = 'flipflap-split-board';
+const LEGACY_KEY = 'flipflap-split-lines';
+const DEFAULT_INTERVAL_SEC = 8;
+const MIN_INTERVAL_SEC = 3;
+const MAX_INTERVAL_SEC = 120;
 
 type DialogEl = HTMLElement & {
   show: () => Promise<boolean>;
@@ -19,26 +22,32 @@ type DialogEl = HTMLElement & {
   open: boolean;
 };
 
+type FieldEl = HTMLElement & { value: string };
+
 interface Cell {
   el: HTMLElement;
   face: HTMLElement;
   current: string;
   target: string;
   busy: boolean;
-  timer: ReturnType<typeof setTimeout> | null;
+  gen: number;
 }
 
-let root: HTMLElement | null = null;
-let cells: Cell[][] = [];
-let lines: string[] = Array.from({ length: SPLIT_ROWS }, () => '');
-let dialog: DialogEl | null = null;
+interface SplitState {
+  intervalSec: number;
+  pages: string[][];
+}
 
-function esc(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+let cells: Cell[][] = [];
+let state: SplitState = { intervalSec: DEFAULT_INTERVAL_SEC, pages: [] };
+let pageIndex = 0;
+let editPageIndex = 0;
+let dialog: DialogEl | null = null;
+let rotateTimer: ReturnType<typeof setInterval> | null = null;
+let visible = false;
+
+function blankPage(): string[] {
+  return Array.from({ length: SPLIT_ROWS }, () => ' '.repeat(SPLIT_COLS));
 }
 
 function normalizeChar(raw: string): string {
@@ -54,32 +63,74 @@ function padLine(raw: string): string {
   return up.padEnd(SPLIT_COLS, ' ');
 }
 
-function loadLines(): string[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return defaultLines();
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return defaultLines();
-    return Array.from({ length: SPLIT_ROWS }, (_, i) =>
-      padLine(typeof parsed[i] === 'string' ? parsed[i] : ''),
-    );
-  } catch {
-    return defaultLines();
-  }
+function normalizePage(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return blankPage();
+  return Array.from({ length: SPLIT_ROWS }, (_, i) =>
+    padLine(typeof raw[i] === 'string' ? (raw[i] as string) : ''),
+  );
 }
 
-function defaultLines(): string[] {
-  const blank = ' '.repeat(SPLIT_COLS);
-  const out = Array.from({ length: SPLIT_ROWS }, () => blank);
-  out[1] = padLine('FLIPFLAP  SPLIT BOARD');
-  out[3] = padLine('EDIT TO DISPLAY TEXT');
-  out[5] = padLine('AIRPORT STYLE FLAPS');
-  return out;
+function defaultPages(): string[][] {
+  return [
+    [
+      padLine(''),
+      padLine('FLIPFLAP SPLIT BOARD'),
+      padLine(''),
+      padLine('EDIT TO DISPLAY TEXT'),
+      padLine(''),
+      padLine('AIRPORT STYLE FLAPS'),
+      padLine(''),
+      padLine(''),
+    ],
+    [
+      padLine('WELCOME ABOARD'),
+      padLine(''),
+      padLine('GATE  A12   ON TIME'),
+      padLine('GATE  B04   DELAYED'),
+      padLine('GATE  C21   BOARDING'),
+      padLine(''),
+      padLine('NEXT PAGE IN A FEW SEC'),
+      padLine(''),
+    ],
+  ];
+}
+
+function clampInterval(n: number): number {
+  if (!Number.isFinite(n)) return DEFAULT_INTERVAL_SEC;
+  return Math.min(MAX_INTERVAL_SEC, Math.max(MIN_INTERVAL_SEC, Math.round(n)));
+}
+
+function loadState(): SplitState {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<SplitState>;
+      const pages = Array.isArray(parsed.pages)
+        ? parsed.pages.map(normalizePage).filter((p) => p.length === SPLIT_ROWS)
+        : [];
+      return {
+        intervalSec: clampInterval(Number(parsed.intervalSec)),
+        pages: pages.length ? pages : defaultPages(),
+      };
+    }
+    /* migrate legacy single-page storage */
+    const legacy = localStorage.getItem(LEGACY_KEY);
+    if (legacy) {
+      const parsed = JSON.parse(legacy) as unknown;
+      return {
+        intervalSec: DEFAULT_INTERVAL_SEC,
+        pages: [normalizePage(parsed)],
+      };
+    }
+  } catch {
+    /* ignore */
+  }
+  return { intervalSec: DEFAULT_INTERVAL_SEC, pages: defaultPages() };
 }
 
 function persist(): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(lines));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch {
     /* quota */
   }
@@ -108,10 +159,15 @@ function paintCell(cell: Cell, ch: string): void {
   cell.el.classList.toggle('is-blank', ch === ' ');
 }
 
+function delay(ms: number, cell: Cell, gen: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    window.setTimeout(() => resolve(cell.gen === gen), ms);
+  });
+}
+
 function flipOnce(cell: Cell, next: string): Promise<void> {
   return new Promise((resolve) => {
     cell.el.classList.remove('is-flipping');
-    // force reflow so animation restarts
     void cell.el.offsetWidth;
     cell.el.classList.add('is-flipping');
     const done = (): void => {
@@ -121,54 +177,97 @@ function flipOnce(cell: Cell, next: string): Promise<void> {
       resolve();
     };
     cell.el.addEventListener('animationend', done);
-    window.setTimeout(done, 220);
+    window.setTimeout(done, 160);
   });
 }
 
-async function rotateCellTo(cell: Cell, targetRaw: string): Promise<void> {
+/**
+ * Airport-style: each flap spins a random number of times, then lands on target.
+ */
+async function rotateCellAirport(cell: Cell, targetRaw: string): Promise<void> {
   const target = normalizeChar(targetRaw);
   cell.target = target;
-  if (cell.busy) return;
-  if (cell.current === target) return;
+  const gen = ++cell.gen;
   cell.busy = true;
-  let guard = SPLIT_CHARSET.length + 2;
-  while (cell.current !== cell.target && guard-- > 0) {
-    const next = nextChar(cell.current);
+
+  const base = stepsBetween(cell.current, target);
+  /* 0–2 full charset spins + path to target; skip if already there (mostly) */
+  let remaining =
+    base === 0
+      ? Math.random() < 0.12
+        ? SPLIT_CHARSET.length
+        : 0
+      : base + Math.floor(Math.random() * 3) * SPLIT_CHARSET.length + Math.floor(Math.random() * 8);
+
+  const stepMs = 28 + Math.floor(Math.random() * 36);
+
+  while (remaining > 0) {
+    if (cell.gen !== gen) return;
+    remaining -= 1;
+    const next = remaining === 0 ? target : nextChar(cell.current);
     await flipOnce(cell, next);
-    await new Promise((r) => {
-      cell.timer = setTimeout(r, STEP_MS);
-    });
+    if (!(await delay(stepMs, cell, gen))) return;
   }
-  paintCell(cell, cell.target);
-  cell.busy = false;
+
+  if (cell.gen === gen) {
+    paintCell(cell, target);
+    cell.busy = false;
+  }
 }
 
-function setBoardLines(next: string[], animate: boolean): void {
-  lines = Array.from({ length: SPLIT_ROWS }, (_, i) => padLine(next[i] ?? ''));
-  persist();
+function showPage(index: number, animate: boolean): void {
+  if (!state.pages.length) return;
+  pageIndex = ((index % state.pages.length) + state.pages.length) % state.pages.length;
+  const page = state.pages[pageIndex] ?? blankPage();
+  syncPageIndicator();
+
   for (let r = 0; r < SPLIT_ROWS; r++) {
-    const line = lines[r] ?? '';
+    const line = page[r] ?? ' '.repeat(SPLIT_COLS);
     for (let c = 0; c < SPLIT_COLS; c++) {
       const cell = cells[r]?.[c];
       if (!cell) continue;
       const ch = line[c] ?? ' ';
       if (!animate) {
-        if (cell.timer) clearTimeout(cell.timer);
+        cell.gen += 1;
         cell.busy = false;
         paintCell(cell, ch);
         cell.target = ch;
       } else {
-        const delay = (c + r * 2) * 12 + stepsBetween(cell.current, ch) * 2;
+        /* staggered random start — airport cascade */
+        const startDelay = Math.floor(Math.random() * 520) + c * 18 + r * 28;
         window.setTimeout(() => {
-          void rotateCellTo(cell, ch);
-        }, delay);
+          void rotateCellAirport(cell, ch);
+        }, startDelay);
       }
     }
   }
 }
 
+function syncPageIndicator(): void {
+  const el = document.getElementById('split-page-indicator');
+  if (!el) return;
+  el.textContent = t('split.pageOf')
+    .replace('{n}', String(pageIndex + 1))
+    .replace('{total}', String(Math.max(1, state.pages.length)));
+}
+
+function stopRotation(): void {
+  if (rotateTimer) {
+    clearInterval(rotateTimer);
+    rotateTimer = null;
+  }
+}
+
+function startRotation(): void {
+  stopRotation();
+  if (!visible || state.pages.length < 2 || state.intervalSec < MIN_INTERVAL_SEC) return;
+  rotateTimer = setInterval(() => {
+    showPage(pageIndex + 1, true);
+  }, state.intervalSec * 1000);
+}
+
 function buildGrid(host: HTMLElement): void {
-  const frag = document.createDocumentFragment();
+  host.replaceChildren();
   cells = [];
   for (let r = 0; r < SPLIT_ROWS; r++) {
     const row = document.createElement('div');
@@ -189,35 +288,83 @@ function buildGrid(host: HTMLElement): void {
         current: ' ',
         target: ' ',
         busy: false,
-        timer: null,
+        gen: 0,
       });
     }
     cells.push(rowCells);
-    frag.appendChild(row);
+    host.appendChild(row);
   }
-  host.appendChild(frag);
+}
+
+function fillEditorFields(): void {
+  const interval = document.getElementById('split-interval') as FieldEl | null;
+  if (interval) interval.value = String(state.intervalSec);
+
+  const pageSelect = document.getElementById('split-page-select') as FieldEl | null;
+  if (pageSelect) {
+    pageSelect.innerHTML = state.pages
+      .map((_, i) => `<k3-menu-item value="${i}">${t('split.page')} ${i + 1}</k3-menu-item>`)
+      .join('');
+    pageSelect.value = String(editPageIndex);
+  }
+
+  const page = state.pages[editPageIndex] ?? blankPage();
+  for (let i = 0; i < SPLIT_ROWS; i++) {
+    const field = document.getElementById(`split-line-${i}`) as FieldEl | null;
+    if (field) field.value = (page[i] ?? '').trimEnd();
+  }
+
+  const delBtn = document.getElementById('split-page-delete');
+  if (delBtn) delBtn.toggleAttribute('disabled', state.pages.length <= 1);
+}
+
+function readEditorPageLines(): string[] {
+  return Array.from({ length: SPLIT_ROWS }, (_, i) => {
+    const field = document.getElementById(`split-line-${i}`) as FieldEl | null;
+    return padLine(String(field?.value ?? ''));
+  });
 }
 
 function openEditor(): void {
-  if (!dialog || !root) return;
-  for (let i = 0; i < SPLIT_ROWS; i++) {
-    const field = document.getElementById(`split-line-${i}`) as
-      | (HTMLElement & { value: string })
-      | null;
-    if (field) field.value = (lines[i] ?? '').trimEnd();
-  }
+  if (!dialog) return;
+  editPageIndex = Math.min(editPageIndex, state.pages.length - 1);
+  fillEditorFields();
   void dialog.show();
 }
 
 function applyEditor(): void {
-  const next = Array.from({ length: SPLIT_ROWS }, (_, i) => {
-    const field = document.getElementById(`split-line-${i}`) as
-      | (HTMLElement & { value: string })
-      | null;
-    return String(field?.value ?? '');
-  });
-  setBoardLines(next, true);
+  const interval = document.getElementById('split-interval') as FieldEl | null;
+  state.intervalSec = clampInterval(Number(interval?.value ?? DEFAULT_INTERVAL_SEC));
+
+  /* save current edit page lines */
+  state.pages[editPageIndex] = readEditorPageLines();
+  persist();
+
+  pageIndex = Math.min(pageIndex, state.pages.length - 1);
+  showPage(pageIndex, true);
+  startRotation();
   void dialog?.hide('user');
+}
+
+function addPage(): void {
+  state.pages[editPageIndex] = readEditorPageLines();
+  state.pages.push(blankPage());
+  editPageIndex = state.pages.length - 1;
+  fillEditorFields();
+}
+
+function deletePage(): void {
+  if (state.pages.length <= 1) return;
+  state.pages.splice(editPageIndex, 1);
+  editPageIndex = Math.min(editPageIndex, state.pages.length - 1);
+  fillEditorFields();
+}
+
+function selectEditPage(next: number): void {
+  if (next === editPageIndex || next < 0 || next >= state.pages.length) return;
+  state.pages[editPageIndex] = readEditorPageLines();
+  editPageIndex = next;
+  fillEditorFields();
 }
 
 /** Mount the Split board page + editor dialog. */
@@ -225,25 +372,49 @@ export function mountSplitPage(page: HTMLElement): {
   show: () => void;
   hide: () => void;
 } {
-  lines = loadLines();
+  state = loadState();
+  pageIndex = 0;
+  editPageIndex = 0;
+
   page.innerHTML = `<div class="page-panel split-page">
       <header class="page-header split-header">
         <div class="split-header-text">
           <h1 class="page-title">${t('split.title')}</h1>
           <p class="page-tagline">${t('split.tagline')}</p>
         </div>
-        <k3-button id="split-edit" variant="tonal" size="sm">
-          ${msIcon('edit')}<span>${t('split.edit')}</span>
-        </k3-button>
+        <div class="split-header-actions">
+          <span id="split-page-indicator" class="split-page-indicator"></span>
+          <k3-button id="split-edit" class="split-edit-btn" variant="filled" size="sm">
+            ${msIcon('edit')}<span>${t('split.edit')}</span>
+          </k3-button>
+        </div>
       </header>
       <div class="split-stage">
         <div id="split-grid" class="split-grid" role="grid" aria-label="${t('split.title')}"></div>
+        <k3-fab id="split-edit-fab" class="split-edit-fab" size="default" variant="primary" aria-label="${t('split.edit')}">
+          <span slot="icon" class="ms notranslate" translate="no" lang="zxx" data-k3-icon="edit" aria-hidden="true"></span>
+        </k3-fab>
       </div>
     </div>
     <k3-dialog id="split-editor" class="split-editor" close-action>
       <span slot="headline">${t('split.editorTitle')}</span>
-      <div class="split-editor-body">
+      <div class="split-editor-body k3-scroll">
         <p class="split-editor-hint">${t('split.editorHint')}</p>
+        <k3-text-field
+          id="split-interval"
+          class="split-interval-field"
+          variant="outlined"
+          type="number"
+          min="${MIN_INTERVAL_SEC}"
+          max="${MAX_INTERVAL_SEC}"
+          label="${t('split.interval')}"
+          inputmode="numeric"
+        ></k3-text-field>
+        <div class="split-page-toolbar">
+          <k3-select id="split-page-select" class="split-page-select" variant="outlined" label="${t('split.page')}"></k3-select>
+          <k3-button id="split-page-add" variant="tonal" size="sm">${t('split.addPage')}</k3-button>
+          <k3-button id="split-page-delete" variant="text" size="sm">${t('split.deletePage')}</k3-button>
+        </div>
         ${Array.from(
           { length: SPLIT_ROWS },
           (_, i) => `<k3-text-field
@@ -260,33 +431,40 @@ export function mountSplitPage(page: HTMLElement): {
       <k3-button slot="actions" id="split-apply" variant="filled" size="sm">${t('split.apply')}</k3-button>
     </k3-dialog>`;
 
-  root = page;
   dialog = document.getElementById('split-editor') as DialogEl;
   const grid = document.getElementById('split-grid');
   if (grid) buildGrid(grid);
-  setBoardLines(lines, false);
+  showPage(0, false);
   sealLigatures(page);
 
   document.getElementById('split-edit')?.addEventListener('k3-click', () => openEditor());
+  document.getElementById('split-edit-fab')?.addEventListener('k3-click', () => openEditor());
   document.getElementById('split-cancel')?.addEventListener('k3-click', () => {
     void dialog?.hide('user');
   });
   document.getElementById('split-apply')?.addEventListener('k3-click', () => applyEditor());
+  document.getElementById('split-page-add')?.addEventListener('k3-click', () => addPage());
+  document.getElementById('split-page-delete')?.addEventListener('k3-click', () => deletePage());
+  document.getElementById('split-page-select')?.addEventListener(
+    'k3-change',
+    ((event: CustomEvent<{ value?: string }>) => {
+      const v = Number(event.detail?.value);
+      if (Number.isFinite(v)) selectEditPage(v);
+    }) as EventListener,
+  );
 
   return {
     show: () => {
+      visible = true;
       page.hidden = false;
-      // re-run a gentle refresh so flaps animate when entering the page
-      setBoardLines(lines, true);
+      showPage(pageIndex, true);
+      startRotation();
     },
     hide: () => {
+      visible = false;
       page.hidden = true;
+      stopRotation();
       void dialog?.hide('user');
     },
   };
-}
-
-/** Escape helper exported for tests / debug. */
-export function previewLine(raw: string): string {
-  return esc(padLine(raw));
 }
