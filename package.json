@@ -1,5 +1,9 @@
 {
   "name": "flipflap",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Kam3leoN/flipflap.git"
+  },
   "private": true,
   "version": "1.3.0",
   "type": "module",

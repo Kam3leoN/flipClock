@@ -15,7 +15,7 @@ import {
 } from './i18n';
 import { HEART_SVG, msIcon, sealLigatures } from './icons';
 import { mountLocaleFlags } from './locale-flags';
-import { saintOfDay } from './saints';
+import { feastsToHtml, fetchFeastsOfDay } from './saints';
 import {
   applyExpressiveTheme,
   COLOR_VARIANTS,
@@ -101,13 +101,15 @@ const HOVER_HIDE_MS = 3000;
 const IS_FLIP_TEST = false;
 const PHONE_MQ = '(max-width: 600px)';
 const THEME_CYCLE: ColorMode[] = ['dark', 'light', 'auto', 'system'];
-const URL_FLIPCLOCK = 'https://github.com/Kam3leoN/flipClock';
+const URL_FLIPFLAP = 'https://github.com/Kam3leoN/flipflap';
 const URL_K3UI = 'https://github.com/Kam3leoN/k3ui-expressive';
 const URL_K3UI_DOC = 'https://k3ui-expressive.vercel.app';
 
 let displayedHour: number | undefined;
 let displayedMinute: string | undefined;
 let displayedDateKey: string | undefined;
+let displayedSaintsKey: string | undefined;
+let saintsRequestId = 0;
 let timeFormat: TimeFormat = 0;
 let displayedTimeFormat: TimeFormat = 0;
 let showFlaps = true;
@@ -296,19 +298,37 @@ function syncDateVisibility(): void {
 
 function updateDateDisplay(now = new Date()): void {
   const el = document.getElementById('clock-date');
-  const saintsEl = document.getElementById('clock-saints');
   if (!el) return;
   const key = `${getLocale()}-${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
-  const saint = saintOfDay(now);
-  if (key === displayedDateKey && el.textContent) {
-    if (saintsEl && showSaints) saintsEl.textContent = saint;
-    return;
+  if (key !== displayedDateKey || !el.textContent) {
+    const { text, iso } = formatFullDate(now);
+    el.textContent = text;
+    el.setAttribute('datetime', iso);
+    displayedDateKey = key;
   }
-  const { text, iso } = formatFullDate(now);
-  el.textContent = text;
-  el.setAttribute('datetime', iso);
-  if (saintsEl) saintsEl.textContent = saint;
-  displayedDateKey = key;
+  void updateSaintsDisplay(now);
+}
+
+/** Load Nominis feasts and paint gendered colors under the date. */
+async function updateSaintsDisplay(now = new Date()): Promise<void> {
+  const saintsEl = document.getElementById('clock-saints');
+  if (!saintsEl || !showDate || !showSaints) return;
+
+  const key = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+  if (key === displayedSaintsKey && saintsEl.childNodes.length > 0) return;
+
+  const req = ++saintsRequestId;
+  try {
+    const items = await fetchFeastsOfDay(now);
+    if (req !== saintsRequestId) return;
+    saintsEl.innerHTML = feastsToHtml(items);
+    saintsEl.title = items.map((i) => i.name).join(' · ');
+    displayedSaintsKey = key;
+  } catch {
+    if (req !== saintsRequestId) return;
+    saintsEl.textContent = '';
+    saintsEl.removeAttribute('title');
+  }
 }
 
 function themeConfig() {
@@ -568,7 +588,10 @@ function updateSettings(patch: SettingsPatch): void {
       showSaints = patch.saints;
       setStorage('saints', showSaints);
       syncSaintsVisibility();
-      if (showSaints) updateDateDisplay();
+      if (showSaints) {
+        displayedSaintsKey = undefined;
+        void updateSaintsDisplay();
+      }
     }
   }
 
@@ -1028,7 +1051,7 @@ function mountChromeUi(): void {
 
   requireEl('fab-settings').addEventListener('k3-click', () => openSheet());
   requireEl('fab-flipclock').addEventListener('k3-click', () => {
-    window.open(URL_FLIPCLOCK, '_blank', 'noopener,noreferrer');
+    window.open(URL_FLIPFLAP, '_blank', 'noopener,noreferrer');
   });
   requireEl('fab-k3ui').addEventListener('k3-click', () => {
     window.open(URL_K3UI, '_blank', 'noopener,noreferrer');
