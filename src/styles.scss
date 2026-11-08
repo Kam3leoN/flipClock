@@ -737,7 +737,8 @@ k3-nav-rail:not(:defined) {
   font-weight: 700;
 }
 #main-content-area .flipflap-clock.tick {
-  font-size: 18rem;
+  /* ~600px flaps @ area 1250×600 → font drives panel height */
+  font-size: 600px;
   line-height: 1;
   width: 100%;
   height: 100%;
@@ -747,18 +748,38 @@ k3-nav-rail:not(:defined) {
   color: var(--flip-digit);
 }
 #main-content-area .flipflap-clock-row {
-  gap: 0.08em;
   width: 100%;
   height: 100%;
-  align-items: center;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 50px;
+}
+#main-content-area .flipflap-unit {
+  flex: 1 1 0;
+  display: flex !important;
+  align-items: stretch;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 600px;
+  height: 100%;
 }
 #main-content-area .tick-flip {
-  margin: 0 0.02em;
-  min-width: 0.95em;
-  border-radius: 0.12em;
+  flex: 1 1 0;
+  margin: 0;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 50px;
   letter-spacing: 0;
   text-indent: 0;
-  box-shadow: 0 0 0.04em var(--flip-shadow);
+  box-shadow: 0 0 20px var(--flip-shadow);
+}
+#main-content-area.single .flipflap-unit .tick-flip {
+  border-radius: 50px;
+}
+#main-content-area:not(.single) .flipflap-unit .tick-flip {
+  border-radius: 40px;
 }
 #main-content-area .tick-flip-panel {
   color: var(--flip-digit);
@@ -784,13 +805,13 @@ k3-nav-rail:not(:defined) {
 #main-content-area.flipflap-clock--plain .tick-flip-panel-back::after {
   display: none !important;
 }
-.portrait #main-content-area .flipflap-clock.tick {
-  font-size: 12rem;
+.portrait #main-content-area .flipflap-clock-row {
+  flex-direction: column;
+  gap: 50px;
 }
-@media (max-width: 900px) {
-  #main-content-area .flipflap-clock.tick {
-    font-size: 10rem;
-  }
+.portrait #main-content-area .flipflap-unit {
+  max-width: none;
+  max-height: 600px;
 }
 
 /*

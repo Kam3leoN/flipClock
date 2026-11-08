@@ -56,9 +56,9 @@ function markup(): string {
   const hAttr = hTx ? ` data-transform="${hTx}"` : '';
   const mAttr = mTx ? ` data-transform="${mTx}"` : '';
   return `<div class="tick flipflap-clock" data-credits="false" aria-hidden="true">
-  <div data-layout="horizontal fit center" class="flipflap-clock-row">
-    <span data-key="hours"${hAttr} data-view="flip" data-style="rounded:panels"></span>
-    <span data-key="minutes"${mAttr} data-view="flip" data-style="rounded:panels"></span>
+  <div data-layout="horizontal fit" class="flipflap-clock-row">
+    <span data-key="hours" class="flipflap-unit"${hAttr} data-view="flip" data-style="rounded:panels"></span>
+    <span data-key="minutes" class="flipflap-unit"${mAttr} data-view="flip" data-style="rounded:panels"></span>
   </div>
 </div>`;
 }
