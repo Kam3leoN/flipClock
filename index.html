@@ -13,7 +13,7 @@
     <title>FlipFlap</title>
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=add,arrow_drop_down,check,close,code,expand_more,fullscreen,fullscreen_exit,menu,menu_book,palette,settings,widgets"
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=add,arrow_drop_down,cake,check,close,code,delete,edit,expand_more,fullscreen,fullscreen_exit,menu,menu_book,palette,settings,widgets"
     />
   </head>
   <body>
@@ -22,19 +22,11 @@
     <div id="clock-meta" class="clock-meta" hidden>
       <time id="clock-date" datetime=""></time>
       <p id="clock-saints" class="clock-saints" hidden></p>
+      <p id="clock-birthdays" class="clock-birthdays" role="status" hidden></p>
     </div>
     <div id="main">
       <div id="main-content">
-        <div id="main-content-area" role="timer" aria-live="off" aria-atomic="true">
-          <div class="flips" id="hurs" aria-hidden="true">
-            <div class="flip hur top"></div>
-            <div class="flip bottom hur"></div>
-          </div>
-          <div class="flips" id="mins" aria-hidden="true">
-            <div class="flip min top"></div>
-            <div class="flip bottom min"></div>
-          </div>
-        </div>
+        <div id="main-content-area" role="timer" aria-live="off" aria-atomic="true"></div>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

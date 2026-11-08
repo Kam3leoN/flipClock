@@ -8,3 +8,5 @@ dist/
 _raw.*
 index.legacy.html
 .env*
+
+!.env.example

@@ -5,7 +5,7 @@
     "url": "https://github.com/Kam3leoN/flipflap.git"
   },
   "private": true,
-  "version": "1.3.0",
+  "version": "1.4.0",
   "type": "module",
   "scripts": {
     "postinstall": "node scripts/ensure-k3ui.mjs",
@@ -15,7 +15,8 @@
   },
   "dependencies": {
     "flag-icons": "^7.6.0",
-    "k3ui": "github:Kam3leoN/k3ui-expressive"
+    "k3ui": "github:Kam3leoN/k3ui-expressive",
+    "mongodb": "^6.22.0"
   },
   "devDependencies": {
     "sass": "^1.93.2",

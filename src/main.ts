@@ -16,6 +16,7 @@ import {
 import { HEART_SVG, msIcon, sealLigatures } from './icons';
 import { mountLocaleFlags } from './locale-flags';
 import { feastsToHtml, fetchFeastsOfDay } from './saints';
+import { loadBirthdays, mountBirthdaysUi, onBirthdaysChange, todayBannerText } from './birthdays';
 import {
   applyExpressiveTheme,
   COLOR_VARIANTS,
@@ -52,17 +53,37 @@ interface SettingsPatch {
   date?: boolean;
   bandeau?: boolean;
   saints?: boolean;
+  bdays?: boolean;
   credit?: boolean;
   seed?: string;
   variant?: ColorVariant;
   spec?: ColorSpecVersion;
   motion?: MotionScheme;
   locale?: AppLocale;
+  dpf?: DigitMode | string;
 }
 
-interface FlipDetail {
-  h: boolean;
-  m: boolean;
+/** Digits per flap: 1 = one digit per flap (4 flaps), 2 = HH | MM (2 flaps). */
+type DigitMode = 1 | 2;
+
+interface Face {
+  text: string;
+  cls: Partial<Record<FaceClass, boolean>>;
+}
+
+type FaceClass = 'tf0' | 'pm' | 'one' | 'eleven' | 'justeleven' | 'd1' | 'blank';
+const FACE_CLASSES: FaceClass[] = ['tf0', 'pm', 'one', 'eleven', 'justeleven', 'd1', 'blank'];
+
+interface FlipUnit {
+  key: string;
+  topOrg: HTMLElement;
+  topClone: HTMLElement;
+  bottomOrg: HTMLElement;
+  bottomClone: HTMLElement;
+  shown?: Face;
+  target?: Face;
+  busy: boolean;
+  startedAt: number;
 }
 
 interface SegmentChangeDetail {
@@ -97,6 +118,8 @@ const SCALE_DEFAULT = 64;
 const BRIGHTNESS_MAX = 100;
 const BRIGHTNESS_MIN = 50;
 const TICK_MS = 250;
+const BIRTHDAYS_REFRESH_MS = 60 * 60 * 1000;
+const FLIP_WATCHDOG_MS = 2000;
 const HOVER_HIDE_MS = 3000;
 const IS_FLIP_TEST = false;
 const PHONE_MQ = '(max-width: 600px)';
@@ -105,17 +128,19 @@ const URL_FLIPFLAP = 'https://github.com/Kam3leoN/flipflap';
 const URL_K3UI = 'https://github.com/Kam3leoN/k3ui-expressive';
 const URL_K3UI_DOC = 'https://k3ui-expressive.vercel.app';
 
-let displayedHour: number | undefined;
-let displayedMinute: string | undefined;
+let digitMode: DigitMode = 2;
+let flipUnits: FlipUnit[] = [];
+let clockPainted = false;
 let displayedDateKey: string | undefined;
 let displayedSaintsKey: string | undefined;
 let saintsRequestId = 0;
 let timeFormat: TimeFormat = 0;
-let displayedTimeFormat: TimeFormat = 0;
 let showFlaps = true;
 let showDate = true;
 let showBandeau = true;
 let showSaints = true;
+let showBirthdays = true;
+let birthdayBannerText = '';
 let showCredit = true;
 let scale = SCALE_DEFAULT;
 let orientationScale = 1;
@@ -140,10 +165,12 @@ function getStorage(key: string): string | null {
 /** Persist every preference currently in memory. */
 function saveAllPreferences(): void {
   setStorage('tf', timeFormat);
+  setStorage('dpf', digitMode);
   setStorage('bg', showFlaps);
   setStorage('date', showDate);
   setStorage('bandeau', showBandeau);
   setStorage('saints', showSaints);
+  setStorage('bdays', showBirthdays);
   setStorage('credit', showCredit);
   setStorage('br', brightness);
   setStorage('sc', scale);
@@ -178,6 +205,10 @@ function syncSaintsVisibility(): void {
   const visible = showDate && showSaints;
   el.hidden = !visible;
   el.setAttribute('aria-hidden', visible ? 'false' : 'true');
+}
+
+function parseDigitMode(raw: string | number | null | undefined): DigitMode {
+  return Number(raw) === 1 ? 1 : 2;
 }
 
 function parseTimeFormat(raw: string | number): TimeFormat {
@@ -260,34 +291,28 @@ function dispatchBody(name: string, detail?: unknown): void {
   );
 }
 
-function applyHourClasses(
-  el: Element,
-  format: TimeFormat,
-  hour: number,
-): void {
-  el.classList.toggle('tf0', format === 0);
-  el.classList.toggle('pm', format === 0 && hour >= 12);
-  el.classList.toggle('one', isOneDigit(format, hour));
-  el.classList.toggle('eleven', isElevenFamily(format, hour));
-  el.classList.toggle('justeleven', isJustElevenHour(format, hour));
-}
-
-function applyMinuteClasses(el: Element, minute: string): void {
-  el.classList.toggle('eleven', minuteEndsWithOne(minute));
-  el.classList.toggle('justeleven', isMinuteEleven(minute));
-}
-
 function setFlipText(el: Element, text: string | number): void {
   const span = el.querySelector('span');
   if (span) span.textContent = String(text);
+}
+
+/** Birthday banner under the date (visible even when the date is hidden). */
+function updateBirthdayBanner(): void {
+  const el = document.getElementById('clock-birthdays');
+  if (!el) return;
+  birthdayBannerText = showBirthdays ? todayBannerText() : '';
+  el.textContent = birthdayBannerText;
+  el.hidden = !birthdayBannerText;
+  syncDateVisibility();
 }
 
 function syncDateVisibility(): void {
   const meta = document.getElementById('clock-meta');
   const el = document.getElementById('clock-date');
   if (meta) {
-    meta.hidden = !showDate;
-    meta.setAttribute('aria-hidden', showDate ? 'false' : 'true');
+    const metaVisible = showDate || Boolean(birthdayBannerText);
+    meta.hidden = !metaVisible;
+    meta.setAttribute('aria-hidden', metaVisible ? 'false' : 'true');
   }
   if (el) {
     el.hidden = !showDate;
@@ -305,6 +330,7 @@ function updateDateDisplay(now = new Date()): void {
     el.textContent = text;
     el.setAttribute('datetime', iso);
     displayedDateKey = key;
+    updateBirthdayBanner();
   }
   void updateSaintsDisplay(now);
 }
@@ -322,7 +348,7 @@ async function updateSaintsDisplay(now = new Date()): Promise<void> {
     const items = await fetchFeastsOfDay(now);
     if (req !== saintsRequestId) return;
     saintsEl.innerHTML = feastsToHtml(items);
-    saintsEl.title = items.map((i) => i.name).join(' · ');
+    saintsEl.title = items.map((i) => i.name).join(', ');
     displayedSaintsKey = key;
   } catch {
     if (req !== saintsRequestId) return;
@@ -465,6 +491,8 @@ function refreshUiCopy(): void {
 
   const fabSettings = document.getElementById('fab-settings');
   if (fabSettings) fabSettings.textContent = t('menu.settings');
+  const fabBd = document.getElementById('fab-birthdays');
+  if (fabBd) fabBd.textContent = t('menu.birthdays');
   const fabFlip = document.getElementById('fab-flipclock');
   if (fabFlip) fabFlip.textContent = t('menu.flipclock');
   const fabK3 = document.getElementById('fab-k3ui');
@@ -538,23 +566,19 @@ function updateSettings(patch: SettingsPatch): void {
   if (Object.prototype.hasOwnProperty.call(patch, 'tf') && patch.tf !== undefined) {
     const next = parseTimeFormat(patch.tf);
     if (timeFormat !== next) {
-      const syncDisplayedFormat = !(
-        next > 0 &&
-        timeFormat > 0 &&
-        (displayedHour ?? 0) >= 10
-      );
       timeFormat = next;
       setStorage('tf', timeFormat);
+      tickClock();
+    }
+  }
 
-      if (
-        syncDisplayedFormat &&
-        timeFormat !== displayedTimeFormat &&
-        document.body.classList.contains('hlock')
-      ) {
-        dispatchBody('_updateFlips', { h: true, m: false } satisfies FlipDetail);
-      } else if (!syncDisplayedFormat) {
-        displayedTimeFormat = timeFormat;
-      }
+  if (Object.prototype.hasOwnProperty.call(patch, 'dpf') && patch.dpf !== undefined) {
+    const next = parseDigitMode(patch.dpf);
+    if (digitMode !== next) {
+      digitMode = next;
+      setStorage('dpf', digitMode);
+      buildFlaps();
+      tickClock();
     }
   }
 
@@ -592,6 +616,14 @@ function updateSettings(patch: SettingsPatch): void {
         displayedSaintsKey = undefined;
         void updateSaintsDisplay();
       }
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'bdays') && patch.bdays !== undefined) {
+    if (showBirthdays !== patch.bdays) {
+      showBirthdays = patch.bdays;
+      setStorage('bdays', showBirthdays);
+      updateBirthdayBanner();
     }
   }
 
@@ -669,6 +701,8 @@ function loadPersistedSettings(): void {
     timeFormat = parseTimeFormat(storedTf);
   }
 
+  digitMode = parseDigitMode(getStorage('dpf'));
+
   const storedBg = getStorage('bg');
   if (storedBg === null) setStorage('bg', showFlaps);
   else showFlaps = String(storedBg).toLowerCase() === 'true';
@@ -684,6 +718,10 @@ function loadPersistedSettings(): void {
   const storedSaints = getStorage('saints');
   if (storedSaints === null) setStorage('saints', showSaints);
   else showSaints = String(storedSaints).toLowerCase() === 'true';
+
+  const storedBdays = getStorage('bdays');
+  if (storedBdays === null) setStorage('bdays', showBirthdays);
+  else showBirthdays = String(storedBdays).toLowerCase() === 'true';
 
   const storedCredit = getStorage('credit');
   if (storedCredit === null) setStorage('credit', showCredit);
@@ -723,6 +761,10 @@ function applyLoadedSettingsToUi(): void {
     | (HTMLElement & { setSelectedIndices?: (i: number[]) => void })
     | null;
   tf?.setSelectedIndices?.([timeFormat]);
+  const dpf = document.getElementById('dpf') as
+    | (HTMLElement & { setSelectedIndices?: (i: number[]) => void })
+    | null;
+  dpf?.setSelectedIndices?.([digitMode === 1 ? 0 : 1]);
 
   const flaps = document.getElementById('bg') as
     | (HTMLElement & { selected?: boolean })
@@ -749,6 +791,11 @@ function applyLoadedSettingsToUi(): void {
   if (saintsSw) saintsSw.selected = showSaints;
   syncSaintsVisibility();
 
+  const bdaysSw = document.getElementById('show-bdays') as
+    | (HTMLElement & { selected?: boolean })
+    | null;
+  if (bdaysSw) bdaysSw.selected = showBirthdays;
+
   const creditSw = document.getElementById('show-credit') as
     | (HTMLElement & { selected?: boolean })
     | null;
@@ -760,9 +807,8 @@ function applyLoadedSettingsToUi(): void {
   dispatchBody('_updateBrightness', { value: brightness });
   dispatchBody('_updateScale', { value: scale });
   window.focus();
-  document.body.classList.add('willchange');
-  dispatchBody('_updateTime');
-  setInterval(() => dispatchBody('_updateTime'), TICK_MS);
+  tickClock();
+  setInterval(tickClock, TICK_MS);
   document.getElementById('loader')?.classList.add('remove');
 }
 
@@ -788,6 +834,10 @@ function mountChromeUi(): void {
     { label: '12', value: '0' },
     { label: '00', value: '1' },
     { label: '0', value: '2' },
+  ]);
+  const digitSegments = JSON.stringify([
+    { label: '1', value: '1' },
+    { label: '2', value: '2' },
   ]);
   const themeSegments = JSON.stringify([
     { label: t('theme.dark'), value: 'dark' },
@@ -856,6 +906,7 @@ function mountChromeUi(): void {
     <k3-fab-menu id="app-fab-menu" class="settings-trigger" fixed size="default" variant="primary" placement="bottom-end" aria-label="${t('menu.open')}" data-i18n-aria="menu.open">
       <span slot="icon" class="ms notranslate" translate="no" lang="zxx" data-k3-icon="menu" aria-hidden="true"></span>
       <k3-fab-menu-item id="fab-settings" icon="settings">${t('menu.settings')}</k3-fab-menu-item>
+      <k3-fab-menu-item id="fab-birthdays" icon="cake">${t('menu.birthdays')}</k3-fab-menu-item>
       <k3-fab-menu-item id="fab-flipclock" icon="code">${t('menu.flipclock')}</k3-fab-menu-item>
       <k3-fab-menu-item id="fab-k3ui" icon="widgets">${t('menu.k3ui')}</k3-fab-menu-item>
       <k3-fab-menu-item id="fab-docs" icon="menu_book">${t('menu.docs')}</k3-fab-menu-item>
@@ -874,6 +925,16 @@ function mountChromeUi(): void {
             selected-indices="[${timeFormat}]"
           ></k3-button-segmented>
         </div>
+        <div class="opt-row">
+          <span class="opt-label" data-i18n="opt.digitsPerFlap">${t('opt.digitsPerFlap')}</span>
+          <k3-button-segmented
+            id="dpf"
+            shape="rounded"
+            aria-label="${t('opt.digitsPerFlap')}"
+            segments='${digitSegments}'
+            selected-indices="[${digitMode === 1 ? 0 : 1}]"
+          ></k3-button-segmented>
+        </div>
           <div class="opt-row">
             <span class="opt-label" data-i18n="opt.showDate">${t('opt.showDate')}</span>
             <k3-switch id="show-date" aria-label="${t('opt.showDate')}" ${showDate ? 'selected' : ''}></k3-switch>
@@ -881,6 +942,10 @@ function mountChromeUi(): void {
           <div class="opt-row">
             <span class="opt-label" data-i18n="opt.showSaints">${t('opt.showSaints')}</span>
             <k3-switch id="show-saints" aria-label="${t('opt.showSaints')}" ${showSaints ? 'selected' : ''}></k3-switch>
+          </div>
+          <div class="opt-row">
+            <span class="opt-label" data-i18n="opt.showBirthdays">${t('opt.showBirthdays')}</span>
+            <k3-switch id="show-bdays" aria-label="${t('opt.showBirthdays')}" ${showBirthdays ? 'selected' : ''}></k3-switch>
           </div>
           <div class="opt-row">
             <span class="opt-label" data-i18n="opt.showFlaps">${t('opt.showFlaps')}</span>
@@ -1050,6 +1115,18 @@ function mountChromeUi(): void {
   syncFullscreenButton();
 
   requireEl('fab-settings').addEventListener('k3-click', () => openSheet());
+  const openBirthdays = mountBirthdaysUi({
+    onOpen: () => {
+      settingsOpen = true;
+      document.body.classList.add('hover', 'pause', 'settings-open');
+    },
+    onClose: () => {
+      settingsOpen = false;
+      document.body.classList.remove('pause', 'settings-open');
+      setHoverTimer();
+    },
+  });
+  requireEl('fab-birthdays').addEventListener('k3-click', () => openBirthdays());
   requireEl('fab-flipclock').addEventListener('k3-click', () => {
     window.open(URL_FLIPFLAP, '_blank', 'noopener,noreferrer');
   });
@@ -1073,12 +1150,21 @@ function mountChromeUi(): void {
     updateSettings({ tf: raw });
   }) as EventListener);
 
+  requireEl('dpf').addEventListener('k3-change', ((event: CustomEvent<SegmentChangeDetail>) => {
+    const raw = event.detail?.values?.[0];
+    if (raw === '1' || raw === '2') updateSettings({ dpf: raw });
+  }) as EventListener);
+
   requireEl('show-date').addEventListener('k3-change', ((event: CustomEvent<SwitchChangeDetail>) => {
     updateSettings({ date: Boolean(event.detail?.selected) });
   }) as EventListener);
 
   requireEl('show-saints').addEventListener('k3-change', ((event: CustomEvent<SwitchChangeDetail>) => {
     updateSettings({ saints: Boolean(event.detail?.selected) });
+  }) as EventListener);
+
+  requireEl('show-bdays').addEventListener('k3-change', ((event: CustomEvent<SwitchChangeDetail>) => {
+    updateSettings({ bdays: Boolean(event.detail?.selected) });
   }) as EventListener);
 
   requireEl('show-bandeau').addEventListener('k3-change', ((event: CustomEvent<SwitchChangeDetail>) => {
@@ -1175,23 +1261,6 @@ function mountChromeUi(): void {
   sealLigatures(document);
 }
 
-function prepareFlipNodes(): void {
-  document.querySelectorAll('.flip').forEach((node) => {
-    const clone = node.cloneNode(true) as HTMLElement;
-    clone.classList.add('clone');
-    node.closest('.flips')?.appendChild(clone);
-  });
-
-  document.querySelectorAll('.flip').forEach((node) => {
-    const el = node as HTMLElement;
-    const hm = el.classList.contains('hur') ? 'hur' : 'min';
-    const half = el.classList.contains('top') ? 'top' : 'bottom';
-    const kind = el.classList.contains('clone') ? 'clone' : 'org';
-    el.dataset.hm = hm;
-    el.id = `${hm}-${half}-${kind}`;
-    el.appendChild(document.createElement('span'));
-  });
-}
 
 function bindScaleAndBrightness(): void {
   document.body.addEventListener('_updateScale', ((event: CustomEvent<{ value?: number | string }>) => {
@@ -1257,159 +1326,173 @@ function bindResize(): void {
   });
 }
 
-function bindClock(): void {
-  document.body.addEventListener('_updateTime', () => {
-    const now = new Date();
-    const hour = now.getHours();
-    const minute = IS_FLIP_TEST ? now.getSeconds() : now.getMinutes();
-    const seconds = now.getSeconds();
-    const minuteText = formatMinute(minute);
-    updateDateDisplay(now);
+/** Faces (text + modifier classes) for every flap, in DOM order. */
+function computeFaces(now: Date): Face[] {
+  const hour = now.getHours();
+  const minute = IS_FLIP_TEST ? now.getSeconds() : now.getMinutes();
+  const minuteText = formatMinute(minute);
+  const hourText = String(formatHour(timeFormat, hour));
+  const tf0 = timeFormat === 0;
+  const pm = tf0 && hour >= 12;
 
-    if (displayedHour == null || displayedMinute == null) {
-      requireEl('main-content-area').classList.add('stop');
-      document.querySelectorAll('.flip').forEach((el) => {
-        el.classList.remove('transform', 'hit', 'fadein', 'fadeout1', 'fadeout2');
-      });
+  if (digitMode === 2) {
+    return [
+      {
+        text: hourText,
+        cls: {
+          tf0,
+          pm,
+          one: isOneDigit(timeFormat, hour),
+          eleven: isElevenFamily(timeFormat, hour),
+          justeleven: isJustElevenHour(timeFormat, hour),
+        },
+      },
+      {
+        text: minuteText,
+        cls: {
+          eleven: minuteEndsWithOne(minuteText),
+          justeleven: isMinuteEleven(minuteText),
+        },
+      },
+    ];
+  }
 
-      document.querySelectorAll('.flip.hur').forEach((el) => {
-        applyHourClasses(el, timeFormat, hour);
-        setFlipText(el, formatHour(timeFormat, hour));
-      });
-      document.querySelectorAll('.flip.min').forEach((el) => {
-        applyMinuteClasses(el, minuteText);
-        setFlipText(el, minuteText);
-      });
+  /* 1 digit per flap — a one-digit hour leaves the first flap blank. */
+  const [h1, h2] = hourText.length === 1 ? ['', hourText] : [hourText[0], hourText[1]];
+  const digit = (text: string, extra: Face['cls'] = {}): Face => ({
+    text,
+    cls: { ...extra, d1: text === '1', blank: text === '' },
+  });
+  return [digit(h1, { tf0, pm }), digit(h2), digit(minuteText[0]), digit(minuteText[1])];
+}
 
-      displayedHour = hour;
-      displayedMinute = minuteText;
-      displayedTimeFormat = timeFormat;
-      document.body.classList.remove('hlock', 'mlock');
+function faceSig(face: Face | undefined): string {
+  if (!face) return '';
+  return `${face.text}|${FACE_CLASSES.filter((c) => face.cls[c]).join(',')}`;
+}
+
+function applyFace(el: HTMLElement, face: Face): void {
+  for (const c of FACE_CLASSES) el.classList.toggle(c, Boolean(face.cls[c]));
+  setFlipText(el, face.text);
+}
+
+function flapMarkup(kind: 'hur' | 'min'): string {
+  return `<div class="flip ${kind} top"></div><div class="flip bottom ${kind}"></div>`;
+}
+
+/** (Re)build the flap DOM for the current digit mode. */
+function buildFlaps(): void {
+  const area = requireEl('main-content-area');
+  area.classList.toggle('single', digitMode === 1);
+  if (digitMode === 2) {
+    area.innerHTML =
+      `<div class="flips" id="hurs" data-unit="hur" aria-hidden="true">${flapMarkup('hur')}</div>` +
+      `<div class="flips" id="mins" data-unit="min" aria-hidden="true">${flapMarkup('min')}</div>`;
+  } else {
+    area.innerHTML =
+      `<div class="flip-group" id="hurs" aria-hidden="true">` +
+      `<div class="flips digit" data-unit="h1">${flapMarkup('hur')}</div>` +
+      `<div class="flips digit" data-unit="h2">${flapMarkup('hur')}</div>` +
+      `</div>` +
+      `<div class="flip-group" id="mins" aria-hidden="true">` +
+      `<div class="flips digit" data-unit="m1">${flapMarkup('min')}</div>` +
+      `<div class="flips digit" data-unit="m2">${flapMarkup('min')}</div>` +
+      `</div>`;
+  }
+
+  flipUnits = [...area.querySelectorAll<HTMLElement>('.flips')].map((box) => {
+    const key = box.dataset.unit ?? '';
+    const [topOrg, bottomOrg] = [...box.querySelectorAll<HTMLElement>('.flip')];
+    const topClone = topOrg.cloneNode(true) as HTMLElement;
+    const bottomClone = bottomOrg.cloneNode(true) as HTMLElement;
+    topClone.classList.add('clone');
+    bottomClone.classList.add('clone');
+    box.append(topClone, bottomClone);
+    for (const el of [topOrg, bottomOrg, topClone, bottomClone]) {
+      el.appendChild(document.createElement('span'));
+    }
+    const unit: FlipUnit = { key, topOrg, topClone, bottomOrg, bottomClone, busy: false, startedAt: 0 };
+    bindUnitAnimation(unit);
+    return unit;
+  });
+  clockPainted = false;
+}
+
+function finishFlip(unit: FlipUnit): void {
+  unit.topClone.classList.remove('act', 'transform');
+  unit.bottomClone.classList.remove('act', 'transform');
+  if (unit.target) {
+    applyFace(unit.topClone, unit.target);
+    applyFace(unit.bottomOrg, unit.target);
+    unit.shown = unit.target;
+  }
+  unit.busy = false;
+}
+
+function bindUnitAnimation(unit: FlipUnit): void {
+  unit.topClone.addEventListener('animationend', (event) => {
+    if (event.target !== unit.topClone || !unit.busy) return;
+    unit.topClone.classList.remove('act', 'transform');
+    if (unit.target) applyFace(unit.topClone, unit.target);
+    unit.bottomClone.classList.add('act', 'transform');
+  });
+
+  unit.bottomClone.addEventListener('animationend', (event) => {
+    if (event.target !== unit.bottomClone || !unit.busy) return;
+    finishFlip(unit);
+    /* Rebound on the flap behind — scale only, no opacity/filter */
+    unit.bottomOrg.classList.remove('hit');
+    void unit.bottomOrg.offsetWidth;
+    unit.bottomOrg.classList.add('hit');
+  });
+
+  unit.bottomOrg.addEventListener('animationend', (event) => {
+    if (event.target === unit.bottomOrg) unit.bottomOrg.classList.remove('hit');
+  });
+}
+
+function flipTo(unit: FlipUnit, face: Face): void {
+  unit.busy = true;
+  unit.startedAt = performance.now();
+  unit.target = face;
+  applyFace(unit.topOrg, face);
+  applyFace(unit.bottomClone, face);
+  unit.topClone.classList.add('act', 'transform');
+}
+
+/** Clock heartbeat: paint immediately the first time, then flip changed flaps. */
+function tickClock(): void {
+  const now = new Date();
+  updateDateDisplay(now);
+  if (!flipUnits.length) return;
+  const faces = computeFaces(now);
+  const area = requireEl('main-content-area');
+
+  if (!clockPainted) {
+    area.classList.add('stop');
+    flipUnits.forEach((unit, i) => {
+      for (const el of [unit.topOrg, unit.bottomOrg, unit.topClone, unit.bottomClone]) {
+        el.classList.remove('act', 'transform', 'hit');
+        applyFace(el, faces[i]);
+      }
+      unit.shown = faces[i];
+      unit.target = faces[i];
+      unit.busy = false;
+    });
+    clockPainted = true;
+    return;
+  }
+
+  flipUnits.forEach((unit, i) => {
+    if (unit.busy) {
+      /* Background tabs may pause CSS animations — never stay stuck. */
+      if (performance.now() - unit.startedAt > FLIP_WATCHDOG_MS) finishFlip(unit);
       return;
     }
-
-    if (
-      hour !== displayedHour ||
-      minuteText !== displayedMinute ||
-      timeFormat !== displayedTimeFormat
-    ) {
-      if (seconds === 59 && document.body.classList.contains('willchange')) {
-        document.body.classList.add('willchange');
-      }
-
-      const minuteChanged =
-        minuteText !== displayedMinute && !document.body.classList.contains('mlock');
-      if (minuteChanged) displayedMinute = minuteText;
-
-      const hourChanged =
-        hour !== displayedHour && !document.body.classList.contains('hlock');
-      if (hourChanged) displayedHour = hour;
-
-      const formatChanged =
-        timeFormat !== displayedTimeFormat && !document.body.classList.contains('hlock');
-
-      if (minuteChanged || hourChanged || formatChanged) {
-        dispatchBody('_updateFlips', {
-          h: Boolean(hourChanged || formatChanged),
-          m: minuteChanged,
-        } satisfies FlipDetail);
-      }
-      return;
+    if (faceSig(faces[i]) !== faceSig(unit.shown)) {
+      area.classList.remove('stop');
+      flipTo(unit, faces[i]);
     }
-
-    if (
-      !document.body.classList.contains('hlock') &&
-      !document.body.classList.contains('mlock') &&
-      document.body.classList.contains('willchange') &&
-      seconds !== 59
-    ) {
-      document.body.classList.remove('willchange');
-    }
-  });
-
-  document.body.addEventListener('_updateFlips', ((event: CustomEvent<FlipDetail>) => {
-    requireEl('main-content-area').classList.remove('stop');
-    const { h, m } = event.detail;
-
-    if (h) {
-      displayedTimeFormat = timeFormat;
-      requireEl('hur-top-clone').classList.add('act', 'transform');
-
-      const topOrg = requireEl('hur-top-org');
-      applyHourClasses(topOrg, displayedTimeFormat, displayedHour!);
-      setFlipText(topOrg, formatHour(displayedTimeFormat, displayedHour!));
-
-      const bottomClone = requireEl('hur-bottom-clone');
-      applyHourClasses(bottomClone, displayedTimeFormat, displayedHour!);
-      setFlipText(bottomClone, formatHour(displayedTimeFormat, displayedHour!));
-    }
-
-    if (m) {
-      requireEl('min-top-clone').classList.add('act', 'transform');
-
-      const topOrg = requireEl('min-top-org');
-      applyMinuteClasses(topOrg, displayedMinute!);
-      setFlipText(topOrg, displayedMinute!);
-
-      const bottomClone = requireEl('min-bottom-clone');
-      applyMinuteClasses(bottomClone, displayedMinute!);
-      setFlipText(bottomClone, displayedMinute!);
-    }
-  }) as EventListener);
-
-  document.querySelectorAll('#hur-top-clone, #min-top-clone').forEach((node) => {
-    node.addEventListener('animationstart', function onTopStart(this: HTMLElement) {
-      const hm = this.dataset.hm;
-      if (hm === 'hur') document.body.classList.add('hlock');
-      else if (hm === 'min') document.body.classList.add('mlock');
-    });
-
-    node.addEventListener('animationend', function onTopEnd(this: HTMLElement) {
-      const hm = this.dataset.hm!;
-      this.classList.remove('act', 'transform');
-
-      if (hm === 'hur') {
-        setFlipText(this, formatHour(displayedTimeFormat, displayedHour!));
-        applyHourClasses(this, displayedTimeFormat, displayedHour!);
-      } else {
-        setFlipText(this, displayedMinute!);
-        applyMinuteClasses(this, displayedMinute!);
-      }
-
-      requireEl(`${hm}-bottom-clone`).classList.add('act', 'transform');
-    });
-  });
-
-  document.querySelectorAll('#hur-bottom-clone, #min-bottom-clone').forEach((node) => {
-    node.addEventListener('animationend', function onBottomCloneEnd(this: HTMLElement) {
-      const hm = this.dataset.hm!;
-      this.classList.remove('act', 'transform');
-
-      const bottomOrg = requireEl(`${hm}-bottom-org`);
-      if (hm === 'hur') {
-        applyHourClasses(bottomOrg, displayedTimeFormat, displayedHour!);
-        setFlipText(bottomOrg, formatHour(displayedTimeFormat, displayedHour!));
-        document.body.classList.remove('hlock');
-      } else {
-        applyMinuteClasses(bottomOrg, displayedMinute!);
-        setFlipText(bottomOrg, displayedMinute!);
-        document.body.classList.remove('mlock');
-        if (document.body.classList.contains('willchange')) {
-          document.body.classList.remove('willchange');
-        }
-      }
-
-      /* Rebound on the flap behind — scale only, no opacity/filter */
-      bottomOrg.classList.remove('hit');
-      void bottomOrg.offsetWidth;
-      bottomOrg.classList.add('hit');
-    });
-  });
-
-  document.querySelectorAll('#hur-bottom-org, #min-bottom-org').forEach((node) => {
-    node.addEventListener('animationend', function onBottomOrgEnd(this: HTMLElement) {
-      if (this.classList.contains('hit')) this.classList.remove('hit');
-    });
   });
 }
 
@@ -1439,9 +1522,8 @@ document.addEventListener('DOMContentLoaded', () => {
     await applyThemeFromMode();
 
     mountChromeUi();
-    prepareFlipNodes();
+    buildFlaps();
     bindScaleAndBrightness();
-    bindClock();
     bindHoverChrome();
     bindResize();
     window.dispatchEvent(new CustomEvent('_resize'));
@@ -1455,6 +1537,15 @@ document.addEventListener('DOMContentLoaded', () => {
     );
 
     applyLoadedSettingsToUi();
+
+    onBirthdaysChange(updateBirthdayBanner);
+    const refreshBirthdays = (): void => {
+      loadBirthdays().catch(() => {
+        /* API offline — banner simply stays empty */
+      });
+    };
+    refreshBirthdays();
+    setInterval(refreshBirthdays, BIRTHDAYS_REFRESH_MS);
 
     window
       .matchMedia('(prefers-color-scheme: dark)')

@@ -103,7 +103,8 @@ export function feastsToHtml(items: FeastItem[]): string {
   if (!items.length) return '';
   return items
     .map((item, i) => {
-      const sep = i === 0 ? '' : '<span class="feast-sep" aria-hidden="true"> · </span>';
+      /* Virgule entre chaque saint·e, aucune après le/la dernier·ère. */
+      const sep = i === 0 ? '' : '<span class="feast-sep">, </span>';
       const cls =
         item.gender === 'm'
           ? 'feast feast--m'
