@@ -777,7 +777,7 @@ k3-nav-rail:not(:defined) {
   gap: var(--flip-gap-digit);
   min-width: 0;
   max-width: 560px;
-  height: 82%;
+  height: 76%;
 }
 #main-content-area .tick-flip {
   flex: 1 1 0;
@@ -790,8 +790,8 @@ k3-nav-rail:not(:defined) {
   text-indent: 0;
   box-shadow: 0 0 20px var(--flip-shadow);
   overflow: hidden;
-  /* darker than leaves so the 3dp seam reads clearly */
-  background: var(--flip-gap, #000);
+  /* pure black behind leaves — 3dp seam must read against charcoal panels */
+  background: #000;
 }
 /*
  * Keep PQINA 50/50 leaf geometry (digit crop stays aligned),
@@ -822,7 +822,7 @@ k3-nav-rail:not(:defined) {
  */
 #main-content-area .tick-flip-panel-front-text .tick-flip-panel-text-wrapper,
 #main-content-area .tick-flip-panel-back-text .tick-flip-panel-text-wrapper {
-  transform: translateY(0.06em);
+  transform: translateY(0.07em);
 }
 #main-content-area .tick-flip-spacer {
   line-height: 1;
