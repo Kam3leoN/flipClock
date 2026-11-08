@@ -17,6 +17,7 @@ import { HEART_SVG, msIcon, sealLigatures } from './icons';
 import { mountLocaleFlags } from './locale-flags';
 import { feastsToHtml, fetchFeastsOfDay } from './saints';
 import { loadBirthdays, mountBirthdaysUi, onBirthdaysChange, todayBannerText } from './birthdays';
+import { mountTodosUi } from './todos';
 import {
   applyExpressiveTheme,
   COLOR_VARIANTS,
@@ -491,14 +492,19 @@ function refreshUiCopy(): void {
 
   const fabSettings = document.getElementById('fab-settings');
   if (fabSettings) fabSettings.textContent = t('menu.settings');
-  const fabBd = document.getElementById('fab-birthdays');
-  if (fabBd) fabBd.textContent = t('menu.birthdays');
   const fabFlip = document.getElementById('fab-flipclock');
   if (fabFlip) fabFlip.textContent = t('menu.flipclock');
   const fabK3 = document.getElementById('fab-k3ui');
   if (fabK3) fabK3.textContent = t('menu.k3ui');
   const fabDocs = document.getElementById('fab-docs');
   if (fabDocs) fabDocs.textContent = t('menu.docs');
+
+  const navHome = document.getElementById('nav-home');
+  if (navHome) navHome.setAttribute('label', t('nav.home'));
+  const navBd = document.getElementById('nav-birthdays');
+  if (navBd) navBd.setAttribute('label', t('nav.birthdays'));
+  const navTodo = document.getElementById('nav-todos');
+  if (navTodo) navTodo.setAttribute('label', t('nav.todos'));
 
   const localeBtn = document.getElementById('locale-menu');
   localeBtn?.setAttribute('label', t('lang.label'));
@@ -903,10 +909,22 @@ function mountChromeUi(): void {
       </k3-icon-button>
     </div>
 
+    <k3-nav-rail
+      id="app-nav-rail"
+      class="app-nav-rail"
+      size="compact"
+      appearance="modal"
+      active="0"
+      aria-label="${t('nav.label')}"
+    >
+      <k3-nav-item id="nav-home" icon="home" label="${t('nav.home')}" active></k3-nav-item>
+      <k3-nav-item id="nav-birthdays" icon="cake" label="${t('nav.birthdays')}"></k3-nav-item>
+      <k3-nav-item id="nav-todos" icon="checklist" label="${t('nav.todos')}"></k3-nav-item>
+    </k3-nav-rail>
+
     <k3-fab-menu id="app-fab-menu" class="settings-trigger" fixed size="default" variant="primary" placement="bottom-end" aria-label="${t('menu.open')}" data-i18n-aria="menu.open">
       <span slot="icon" class="ms notranslate" translate="no" lang="zxx" data-k3-icon="menu" aria-hidden="true"></span>
       <k3-fab-menu-item id="fab-settings" icon="settings">${t('menu.settings')}</k3-fab-menu-item>
-      <k3-fab-menu-item id="fab-birthdays" icon="cake">${t('menu.birthdays')}</k3-fab-menu-item>
       <k3-fab-menu-item id="fab-flipclock" icon="code">${t('menu.flipclock')}</k3-fab-menu-item>
       <k3-fab-menu-item id="fab-k3ui" icon="widgets">${t('menu.k3ui')}</k3-fab-menu-item>
       <k3-fab-menu-item id="fab-docs" icon="menu_book">${t('menu.docs')}</k3-fab-menu-item>
@@ -1115,18 +1133,74 @@ function mountChromeUi(): void {
   syncFullscreenButton();
 
   requireEl('fab-settings').addEventListener('k3-click', () => openSheet());
+
+  /** 0 = FlipFlap, 1 = birthdays, 2 = todos */
+  let navPage = 0;
+
+  const setNavPage = (index: number): void => {
+    navPage = index;
+    const rail = document.getElementById('app-nav-rail') as (HTMLElement & { active?: number }) | null;
+    if (rail && rail.active !== index) rail.active = index;
+  };
+
+  const lockChrome = (): void => {
+    settingsOpen = true;
+    document.body.classList.add('hover', 'pause', 'settings-open');
+  };
+  const unlockChrome = (): void => {
+    settingsOpen = false;
+    document.body.classList.remove('pause', 'settings-open');
+    setHoverTimer();
+  };
+
   const openBirthdays = mountBirthdaysUi({
-    onOpen: () => {
-      settingsOpen = true;
-      document.body.classList.add('hover', 'pause', 'settings-open');
-    },
+    onOpen: lockChrome,
     onClose: () => {
-      settingsOpen = false;
-      document.body.classList.remove('pause', 'settings-open');
-      setHoverTimer();
+      if (navPage !== 1) return;
+      unlockChrome();
+      setNavPage(0);
     },
   });
-  requireEl('fab-birthdays').addEventListener('k3-click', () => openBirthdays());
+  const openTodos = mountTodosUi({
+    onOpen: lockChrome,
+    onClose: () => {
+      if (navPage !== 2) return;
+      unlockChrome();
+      setNavPage(0);
+    },
+  });
+
+  const hidePanel = (id: string): void => {
+    void (document.getElementById(id) as SheetEl | null)?.hide();
+  };
+
+  const goHome = (): void => {
+    setNavPage(0);
+    hidePanel('birthday-sheet');
+    hidePanel('todo-sheet');
+    void sheet.hide();
+    unlockChrome();
+  };
+
+  requireEl('app-nav-rail').addEventListener('k3-change', ((event: CustomEvent<{ index?: number }>) => {
+    const index = event.detail?.index ?? 0;
+    if (index === 0) {
+      goHome();
+      return;
+    }
+    if (index === 1) {
+      setNavPage(1);
+      hidePanel('todo-sheet');
+      openBirthdays();
+      return;
+    }
+    if (index === 2) {
+      setNavPage(2);
+      hidePanel('birthday-sheet');
+      openTodos();
+    }
+  }) as EventListener);
+
   requireEl('fab-flipclock').addEventListener('k3-click', () => {
     window.open(URL_FLIPFLAP, '_blank', 'noopener,noreferrer');
   });
@@ -1419,13 +1493,15 @@ function buildFlaps(): void {
 }
 
 function finishFlip(unit: FlipUnit): void {
-  unit.topClone.classList.remove('act', 'transform');
-  unit.bottomClone.classList.remove('act', 'transform');
+  /* Update static faces BEFORE hiding the bottom clone — otherwise one frame
+     flashes the previous digit on the lower half (worst on 1-digit mode). */
   if (unit.target) {
     applyFace(unit.topClone, unit.target);
     applyFace(unit.bottomOrg, unit.target);
     unit.shown = unit.target;
   }
+  unit.topClone.classList.remove('act', 'transform');
+  unit.bottomClone.classList.remove('act', 'transform');
   unit.busy = false;
 }
 

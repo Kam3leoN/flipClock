@@ -23,7 +23,9 @@ interface NominisPayload {
   };
 }
 
-const CACHE_PREFIX = 'nominis-feasts-';
+/** Primary feasts only (majeurs), capped — bump when parse rules change. */
+const CACHE_PREFIX = 'nominis-primary-v1-';
+const MAX_PRIMARY_FEASTS = 3;
 
 function genderFromSexe(sexe: string | undefined): FeastGender {
   const s = (sexe ?? '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
@@ -73,16 +75,16 @@ function parseNominis(data: NominisPayload): FeastItem[] {
   const prenoms = data.response?.prenoms;
   const out: FeastItem[] = [];
   const seen = new Set<string>();
+  /* Primaires (majeurs) only — dérivés / secondaires exclus. */
   collectPrenoms(prenoms?.majeurs, out, seen);
-  collectPrenoms(prenoms?.derives, out, seen);
-  return out;
+  return out.slice(0, MAX_PRIMARY_FEASTS);
 }
 
-/** Fetch today's (or given day) feasts from Nominis — majeurs then dérivés. */
+/** Fetch today's (or given day) primary feasts from Nominis (max 3). */
 export async function fetchFeastsOfDay(date: Date): Promise<FeastItem[]> {
   const key = dayKey(date);
   const cached = readCache(key);
-  if (cached) return cached;
+  if (cached) return cached.slice(0, MAX_PRIMARY_FEASTS);
 
   const jour = date.getDate();
   const mois = date.getMonth() + 1;

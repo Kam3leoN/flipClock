@@ -316,7 +316,8 @@ a {
   height: 600px;
 }
 .flips.digit {
-  --flap-w: 290px;
+  /* 600 − 2×297 = 6px gap between digit flaps (was 20px @ 290) */
+  --flap-w: 297px;
   top: 0;
   width: var(--flap-w);
   height: 600px;
@@ -645,6 +646,20 @@ html[data-theme='light'] .feast--other {
 }
 .bandeau[hidden] {
   display: none !important;
+}
+
+/* Navigation rail — modal compact, left edge, above clock chrome */
+.app-nav-rail {
+  position: fixed;
+  top: 50%;
+  left: max(0.5rem, env(safe-area-inset-left, 0px));
+  transform: translateY(-50%);
+  z-index: 1150;
+  height: auto;
+  max-height: min(80dvh, 28rem);
+  --k3-nav-rail-bg: color-mix(in srgb, var(--md-sys-color-surface-container) 92%, transparent);
+  --k3-nav-rail-radius: var(--md-sys-shape-corner-extra-large, 28px);
+  box-shadow: 0 8px 28px color-mix(in srgb, var(--md-sys-color-shadow) 35%, transparent);
 }
 
 /*
@@ -1055,10 +1070,11 @@ body.settings-open k3-fab-menu.settings-trigger:not([data-k3-overlay-concealed])
 .bd-form {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  gap: 12px;
   padding: 14px;
   border-radius: 20px;
   background: var(--md-sys-color-surface-container-high);
+  --k3ui-field-outlined-notch-bg: var(--md-sys-color-surface-container-high);
 }
 .bd-form[hidden] {
   display: none;
@@ -1070,32 +1086,9 @@ body.settings-open k3-fab-menu.settings-trigger:not([data-k3-overlay-concealed])
   grid-column: 1 / -1;
 }
 .bd-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
   min-width: 0;
-  font-size: 0.75rem;
-  color: var(--md-sys-color-on-surface-variant);
-}
-.bd-field input,
-.bd-field select {
-  box-sizing: border-box;
   width: 100%;
-  min-width: 0;
-  height: 40px;
-  padding: 0 10px;
-  border: 1px solid var(--md-sys-color-outline);
-  border-radius: 10px;
-  background: var(--md-sys-color-surface-container);
-  color: var(--md-sys-color-on-surface);
-  font: inherit;
-  font-size: 0.9rem;
-}
-.bd-field input:focus,
-.bd-field select:focus {
-  outline: 2px solid var(--md-sys-color-primary);
-  outline-offset: -1px;
-  border-color: transparent;
+  --k3-text-field-max-width: none;
 }
 .bd-error,
 .bd-status {
@@ -1174,23 +1167,71 @@ body.settings-open k3-fab-menu.settings-trigger:not([data-k3-overlay-concealed])
 }
 .bd-item-actions {
   display: flex;
+  gap: 2px;
 }
-.bd-icon-btn {
-  display: inline-grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--md-sys-color-on-surface-variant);
-  cursor: pointer;
-}
-.bd-icon-btn:hover,
-.bd-icon-btn:focus-visible {
-  background: color-mix(in srgb, var(--md-sys-color-on-surface) 10%, transparent);
-  outline: none;
-}
-.birthday-sheet {
+.birthday-sheet,
+.todo-sheet {
   --k3-settings-sheet-width: min(28rem, 100vw);
+}
+
+/* —— To-do —— */
+.todo-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 8px 1.25rem 8px 1.5rem;
+  text-align: left;
+  font-family: 'Google Sans', 'Google Sans Text', system-ui, sans-serif;
+  color: var(--md-sys-color-on-surface);
+}
+.todo-tagline {
+  margin: 0;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.875rem;
+}
+.todo-form {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  --k3ui-field-outlined-notch-bg: var(--md-sys-color-surface);
+}
+.todo-field {
+  flex: 1;
+  min-width: 0;
+  --k3-text-field-max-width: none;
+}
+.todo-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.todo-empty {
+  margin: 8px 0;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.875rem;
+}
+.todo-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 4px 4px 2px;
+  border-radius: 16px;
+  background: var(--md-sys-color-surface-container);
+}
+.todo-item.is-done .todo-text {
+  text-decoration: line-through;
+  opacity: 0.65;
+}
+.todo-text {
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.95rem;
 }

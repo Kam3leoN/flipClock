@@ -198,29 +198,31 @@ function renderList(list: UpcomingBirthday[]): string {
           <span class="bd-days">${b.daysUntil === 0 ? '' : esc(days)}</span>
         </div>
         <div class="bd-item-actions">
-          <button type="button" class="bd-icon-btn" data-action="edit" aria-label="${t('bd.edit')}" title="${t('bd.edit')}">${msIcon('edit')}</button>
-          <button type="button" class="bd-icon-btn" data-action="delete" aria-label="${t('bd.delete')}" title="${t('bd.delete')}">${msIcon('delete')}</button>
+          <k3-icon-button data-action="edit" size="sm" variant="standard" label="${t('bd.edit')}" aria-label="${t('bd.edit')}">${msIcon('edit')}</k3-icon-button>
+          <k3-icon-button data-action="delete" size="sm" variant="standard" label="${t('bd.delete')}" aria-label="${t('bd.delete')}">${msIcon('delete')}</k3-icon-button>
         </div>
       </li>`;
     })
     .join('');
 }
 
+type FieldEl = HTMLElement & { value: string };
+
 function formMarkup(): string {
   const months = monthNames()
-    .map((m, i) => `<option value="${i + 1}">${esc(m)}</option>`)
+    .map((m, i) => `<k3-menu-item value="${i + 1}">${esc(m)}</k3-menu-item>`)
     .join('');
-  const days = Array.from({ length: 31 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join('');
+  const days = Array.from(
+    { length: 31 },
+    (_, i) => `<k3-menu-item value="${i + 1}">${i + 1}</k3-menu-item>`,
+  ).join('');
   return `<form id="bd-form" class="bd-form" hidden novalidate>
       <h3 id="bd-form-title" class="bd-form-title"></h3>
-      <label class="bd-field bd-field--full"><span>${t('bd.name')}</span>
-        <input id="bd-name" name="name" type="text" maxlength="80" required autocomplete="off" /></label>
-      <label class="bd-field"><span>${t('bd.day')}</span><select id="bd-day" name="day">${days}</select></label>
-      <label class="bd-field"><span>${t('bd.month')}</span><select id="bd-month" name="month">${months}</select></label>
-      <label class="bd-field"><span>${t('bd.year')}</span>
-        <input id="bd-year" name="year" type="number" min="1900" max="${new Date().getFullYear()}" inputmode="numeric" /></label>
-      <label class="bd-field bd-field--full"><span>${t('bd.note')}</span>
-        <input id="bd-note" name="note" type="text" maxlength="200" autocomplete="off" /></label>
+      <k3-text-field id="bd-name" class="bd-field bd-field--full" variant="outlined" label="${t('bd.name')}" maxlength="80" required autocomplete="off"></k3-text-field>
+      <k3-select id="bd-day" class="bd-field" variant="outlined" label="${t('bd.day')}" required>${days}</k3-select>
+      <k3-select id="bd-month" class="bd-field" variant="outlined" label="${t('bd.month')}" required>${months}</k3-select>
+      <k3-text-field id="bd-year" class="bd-field" variant="outlined" label="${t('bd.year')}" type="number" min="1900" max="${new Date().getFullYear()}" inputmode="numeric"></k3-text-field>
+      <k3-text-field id="bd-note" class="bd-field bd-field--full" variant="outlined" label="${t('bd.note')}" maxlength="200" autocomplete="off"></k3-text-field>
       <p id="bd-error" class="bd-error" role="alert" hidden></p>
       <div class="bd-form-actions">
         <k3-button id="bd-cancel" variant="text" size="sm">${t('bd.cancel')}</k3-button>
@@ -252,11 +254,11 @@ export function mountBirthdaysUi(opts: { onOpen?: () => void; onClose?: () => vo
 
   const sheet = document.getElementById('birthday-sheet') as SheetEl;
   const form = document.getElementById('bd-form') as HTMLFormElement;
-  const nameIn = document.getElementById('bd-name') as HTMLInputElement;
-  const dayIn = document.getElementById('bd-day') as HTMLSelectElement;
-  const monthIn = document.getElementById('bd-month') as HTMLSelectElement;
-  const yearIn = document.getElementById('bd-year') as HTMLInputElement;
-  const noteIn = document.getElementById('bd-note') as HTMLInputElement;
+  const nameIn = document.getElementById('bd-name') as FieldEl;
+  const dayIn = document.getElementById('bd-day') as FieldEl;
+  const monthIn = document.getElementById('bd-month') as FieldEl;
+  const yearIn = document.getElementById('bd-year') as FieldEl;
+  const noteIn = document.getElementById('bd-note') as FieldEl;
   const errorEl = document.getElementById('bd-error') as HTMLElement;
   const statusEl = document.getElementById('bd-status') as HTMLElement;
   let saving = false;
@@ -286,7 +288,7 @@ export function mountBirthdaysUi(opts: { onOpen?: () => void; onClose?: () => vo
     noteIn.value = b?.note ?? '';
     showError('');
     form.hidden = false;
-    nameIn.focus();
+    (nameIn as HTMLElement & { focus?: () => void }).focus?.();
   };
   const closeForm = (): void => {
     form.hidden = true;
@@ -296,21 +298,22 @@ export function mountBirthdaysUi(opts: { onOpen?: () => void; onClose?: () => vo
 
   const submit = async (): Promise<void> => {
     if (saving) return;
-    const name = nameIn.value.trim();
+    const name = String(nameIn.value ?? '').trim();
     if (!name) {
       showError(`${t('bd.name')} ?`);
-      nameIn.focus();
+      (nameIn as HTMLElement & { focus?: () => void }).focus?.();
       return;
     }
     saving = true;
     try {
+      const yearRaw = String(yearIn.value ?? '').trim();
       await saveBirthday(
         {
           name,
           day: Number(dayIn.value),
           month: Number(monthIn.value),
-          year: yearIn.value ? Number(yearIn.value) : null,
-          note: noteIn.value.trim(),
+          year: yearRaw ? Number(yearRaw) : null,
+          note: String(noteIn.value ?? '').trim(),
         },
         editingId,
       );
@@ -335,8 +338,8 @@ export function mountBirthdaysUi(opts: { onOpen?: () => void; onClose?: () => vo
     opts.onClose?.();
   });
 
-  document.getElementById('bd-list')?.addEventListener('click', (event) => {
-    const btn = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-action]');
+  const onItemAction = (event: Event): void => {
+    const btn = (event.target as HTMLElement).closest<HTMLElement>('[data-action]');
     const id = btn?.closest<HTMLElement>('.bd-item')?.dataset.id;
     const b = items.find((x) => x.id === id);
     if (!btn || !b) return;
@@ -347,7 +350,9 @@ export function mountBirthdaysUi(opts: { onOpen?: () => void; onClose?: () => vo
         statusEl.textContent = fmt('bd.saveError', { msg: err.message });
       });
     }
-  });
+  };
+  document.getElementById('bd-list')?.addEventListener('k3-click', onItemAction);
+  document.getElementById('bd-list')?.addEventListener('click', onItemAction);
 
   render();
 
