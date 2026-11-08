@@ -29,9 +29,12 @@ function getCollection() {
   if (!raw) throw Object.assign(new Error('MONGODB_URI is not configured'), { status: 500 });
   const uri = normalizeUri(raw);
   if (!clientPromise) {
+    // family:4 avoids IPv6 TLS handshake failures seen on some Vercel regions → Atlas.
     clientPromise = new MongoClient(uri, {
       maxPoolSize: 5,
       serverSelectionTimeoutMS: 10_000,
+      connectTimeoutMS: 10_000,
+      family: 4,
     }).connect();
     globalThis.__flipflapMongo = clientPromise;
   }
