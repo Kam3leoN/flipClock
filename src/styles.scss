@@ -793,18 +793,21 @@ k3-nav-rail:not(:defined) {
   /* darker than leaves so the 3dp seam reads clearly */
   background: var(--flip-gap, #000);
 }
-/* 3dp air gap between top / bottom leaves */
+/*
+ * Keep PQINA 50/50 leaf geometry (digit crop stays aligned),
+ * carve a 3dp seam with clip-path so the dark card shows through.
+ */
 #main-content-area .tick-flip-panel-front,
 #main-content-area .tick-flip-shadow-top {
-  height: var(--flip-leaf-h) !important;
+  height: 50% !important;
   top: 0 !important;
-  bottom: auto !important;
+  clip-path: inset(0 0 calc(var(--flip-seam-gap) / 2) 0 round var(--flip-radius-outer));
 }
 #main-content-area .tick-flip-panel-back,
 #main-content-area .tick-flip-shadow-bottom {
-  height: var(--flip-leaf-h) !important;
-  top: calc(50% + (var(--flip-seam-gap) / 2)) !important;
-  bottom: auto !important;
+  height: 50% !important;
+  top: 50% !important;
+  clip-path: inset(calc(var(--flip-seam-gap) / 2) 0 0 0 round var(--flip-radius-outer));
 }
 #main-content-area .tick-flip-panel {
   color: var(--flip-digit);
@@ -814,12 +817,12 @@ k3-nav-rail:not(:defined) {
   background-color: var(--flip-face-bottom);
 }
 /*
- * Optical vertical center — fliqlo glyphs sit high in the em box,
- * leaving empty space under the digit in the lower leaf.
+ * Optical vertical center — fliqlo glyphs sit high in the em box.
+ * Same nudge on both leaves so the seam cut stays matched.
  */
 #main-content-area .tick-flip-panel-front-text .tick-flip-panel-text-wrapper,
 #main-content-area .tick-flip-panel-back-text .tick-flip-panel-text-wrapper {
-  transform: translateY(0.14em);
+  transform: translateY(0.06em);
 }
 #main-content-area .tick-flip-spacer {
   line-height: 1;
