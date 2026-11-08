@@ -739,9 +739,11 @@ k3-nav-rail:not(:defined) {
 #main-content-area {
   --flip-radius-outer: 12px; /* 12dp */
   --flip-radius-inner: 6px; /* 6dp — seam top/bottom */
+  --flip-seam-gap: 3px; /* 3dp between top & bottom leaves */
   --flip-gap-digit: 8px;
   --flip-gap-group: 48px;
   --flip-inset: 12px;
+  --flip-leaf-h: calc(50% - (var(--flip-seam-gap) / 2));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -751,7 +753,7 @@ k3-nav-rail:not(:defined) {
   font-weight: 700;
 }
 #main-content-area .flipflap-clock.tick {
-  font-size: 560px;
+  font-size: 520px;
   line-height: 1;
   width: 100%;
   height: 100%;
@@ -763,19 +765,19 @@ k3-nav-rail:not(:defined) {
 #main-content-area .flipflap-clock-row {
   width: 100%;
   height: 100%;
-  align-items: stretch;
+  align-items: center;
   justify-content: space-between;
   gap: var(--flip-gap-group);
 }
 #main-content-area .flipflap-unit {
   flex: 1 1 0;
   display: flex !important;
-  align-items: stretch;
+  align-items: center;
   justify-content: center;
   gap: var(--flip-gap-digit);
   min-width: 0;
   max-width: 600px;
-  height: 100%;
+  height: 90%;
 }
 #main-content-area .tick-flip {
   flex: 1 1 0;
@@ -787,7 +789,21 @@ k3-nav-rail:not(:defined) {
   letter-spacing: 0;
   text-indent: 0;
   box-shadow: 0 0 20px var(--flip-shadow);
-  overflow: hidden;
+  overflow: visible;
+  background: transparent;
+}
+/* 3dp air gap between top / bottom leaves */
+#main-content-area .tick-flip-panel-front,
+#main-content-area .tick-flip-shadow-top {
+  height: var(--flip-leaf-h) !important;
+  top: 0 !important;
+  bottom: auto !important;
+}
+#main-content-area .tick-flip-panel-back,
+#main-content-area .tick-flip-shadow-bottom {
+  height: var(--flip-leaf-h) !important;
+  top: calc(50% + (var(--flip-seam-gap) / 2)) !important;
+  bottom: auto !important;
 }
 #main-content-area .tick-flip-panel {
   color: var(--flip-digit);
@@ -796,9 +812,21 @@ k3-nav-rail:not(:defined) {
 #main-content-area .tick-flip-panel-back {
   background-color: var(--flip-face-bottom);
 }
+/*
+ * Optical vertical center — fliqlo glyphs sit high in the em box,
+ * leaving empty space under the digit in the lower leaf.
+ */
+#main-content-area .tick-flip-panel-front-text .tick-flip-panel-text-wrapper,
+#main-content-area .tick-flip-panel-back-text .tick-flip-panel-text-wrapper {
+  transform: translateY(0.1em);
+}
+#main-content-area .tick-flip-spacer {
+  line-height: 1;
+}
 /* Outer 12dp · inner seam 6dp (top leaf / bottom leaf) */
 #main-content-area .tick-flip-front,
 #main-content-area .tick-flip-shadow-top,
+#main-content-area .tick-flip-panel-front,
 #main-content-area [data-style*='rounded:panels'] .tick-flip-front,
 #main-content-area [data-style*='rounded:panels'] .tick-flip-shadow-bottom {
   border-radius: var(--flip-radius-outer) var(--flip-radius-outer) var(--flip-radius-inner)
@@ -806,6 +834,7 @@ k3-nav-rail:not(:defined) {
 }
 #main-content-area .tick-flip-back,
 #main-content-area .tick-flip-shadow-bottom,
+#main-content-area .tick-flip-panel-back,
 #main-content-area .tick-flip-panel-back::after,
 #main-content-area [data-style*='rounded:panels'] .tick-flip-back,
 #main-content-area [data-style*='rounded:panels'] .tick-flip-shadow-top,
