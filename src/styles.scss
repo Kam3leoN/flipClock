@@ -872,13 +872,14 @@ k3-nav-rail:not(:defined) {
   max-height: 600px;
 }
 
-/* —— Split board (airport 8×24, full bleed) —— */
+/* —— Split board (airport 8×24) —— */
 .split-page {
   --split-radius-outer: 12px;
   --split-radius-inner: 6px;
   --split-gap: 3px;
   --split-cell-bg: var(--flip-face-top, var(--md-sys-color-surface-container-high));
   --split-cell-fg: var(--flip-digit, var(--md-sys-color-on-surface));
+  position: relative;
 }
 .split-header {
   display: flex;
@@ -900,17 +901,48 @@ k3-nav-rail:not(:defined) {
   color: var(--md-sys-color-on-surface-variant);
   white-space: nowrap;
 }
+.split-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(16rem, 22rem) minmax(0, 1fr);
+  gap: 0;
+  width: 100%;
+}
+.split-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-sizing: border-box;
+  min-height: 0;
+  padding: 0.75rem 1rem 1rem;
+  border-right: 1px solid var(--md-sys-color-outline-variant);
+  text-align: left;
+  overflow: auto;
+  --k3ui-field-outlined-notch-bg: var(--md-sys-color-background);
+  --k3-scroll-track-inset: 0.75rem;
+}
+.split-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.split-settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
 .split-stage {
   position: relative;
-  flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
   display: flex;
   align-items: stretch;
   justify-content: stretch;
-  padding: 0.5rem 0.5rem 0.75rem;
+  padding: 0.5rem;
   box-sizing: border-box;
   overflow: hidden;
-  width: 100%;
 }
 .split-grid {
   display: flex;
@@ -940,7 +972,7 @@ k3-nav-rail:not(:defined) {
   color: var(--split-cell-fg);
   font-family: fliqlo, 'Google Sans', system-ui, sans-serif;
   font-weight: 700;
-  font-size: clamp(0.7rem, 2.8vw, 1.65rem);
+  font-size: clamp(0.7rem, 2.4vw, 1.65rem);
   line-height: 1;
   overflow: hidden;
   box-shadow: inset 0 1px rgba(255, 255, 255, 0.06);
@@ -1010,26 +1042,6 @@ k3-nav-rail:not(:defined) {
     opacity: 1;
   }
 }
-.split-edit-fab {
-  position: absolute;
-  right: max(0.75rem, env(safe-area-inset-right, 0px));
-  bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
-  z-index: 5;
-}
-.split-editor::part(content) {
-  max-height: min(70dvh, 36rem);
-}
-.split-editor-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 4px 0 8px;
-  text-align: left;
-  max-height: min(58dvh, 30rem);
-  overflow: auto;
-  --k3ui-field-outlined-notch-bg: var(--md-sys-color-surface);
-  --k3-scroll-track-inset: 0.5rem;
-}
 .split-editor-hint {
   margin: 0;
   font-size: 0.85rem;
@@ -1055,6 +1067,83 @@ k3-nav-rail:not(:defined) {
   width: 100%;
   --k3-text-field-max-width: none;
   font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+}
+.split-live-exit {
+  position: fixed;
+  top: max(0.75rem, env(safe-area-inset-top, 0px));
+  right: max(0.75rem, env(safe-area-inset-right, 0px));
+  z-index: 10050;
+  opacity: 0.35;
+  transition: opacity 160ms ease;
+}
+.split-live-exit:hover,
+.split-live-exit:focus-visible {
+  opacity: 1;
+}
+
+/* Live: only the flaps — 100vw × 100vh, no chrome */
+html.split-live,
+body.split-live {
+  overflow: hidden !important;
+}
+body.split-live .shell-rail,
+body.split-live #chrome-top,
+body.split-live #site-credit,
+body.split-live #app-fab-menu,
+body.split-live .settings-sheet,
+body.split-live .bandeau,
+body.split-live .prefs-toast,
+body.split-live .split-chrome {
+  display: none !important;
+}
+body.split-live .app {
+  display: block !important;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+}
+body.split-live .shell-content,
+body.split-live #page-split,
+body.split-live .split-page {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: #000 !important;
+  z-index: 10000;
+}
+body.split-live .split-body {
+  display: block !important;
+  width: 100%;
+  height: 100%;
+}
+body.split-live .split-stage {
+  position: absolute !important;
+  inset: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+body.split-live .split-grid {
+  width: 100%;
+  height: 100%;
+}
+body.split-live .split-cell {
+  font-size: clamp(0.85rem, 3.2vw, 2.25rem);
+}
+@media (max-width: 900px) {
+  .split-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(12rem, 38%) minmax(0, 1fr);
+  }
+  .split-settings {
+    border-right: 0;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  }
 }
 
 /*

@@ -1,5 +1,5 @@
 /**
- * Airport-style split-flap board — 8 × 24 cells, multi-page rotation.
+ * Airport-style split-flap board — 8 × 24 cells, multi-page rotation, live mode.
  */
 import { t } from './i18n';
 import { msIcon, sealLigatures } from './icons';
@@ -15,12 +15,6 @@ const LEGACY_KEY = 'flipflap-split-lines';
 const DEFAULT_INTERVAL_SEC = 8;
 const MIN_INTERVAL_SEC = 3;
 const MAX_INTERVAL_SEC = 120;
-
-type DialogEl = HTMLElement & {
-  show: () => Promise<boolean>;
-  hide: (reason?: string) => Promise<boolean>;
-  open: boolean;
-};
 
 type FieldEl = HTMLElement & { value: string };
 
@@ -42,9 +36,10 @@ let cells: Cell[][] = [];
 let state: SplitState = { intervalSec: DEFAULT_INTERVAL_SEC, pages: [] };
 let pageIndex = 0;
 let editPageIndex = 0;
-let dialog: DialogEl | null = null;
 let rotateTimer: ReturnType<typeof setInterval> | null = null;
 let visible = false;
+let live = false;
+let pageRoot: HTMLElement | null = null;
 
 function blankPage(): string[] {
   return Array.from({ length: SPLIT_ROWS }, () => ' '.repeat(SPLIT_COLS));
@@ -113,7 +108,6 @@ function loadState(): SplitState {
         pages: pages.length ? pages : defaultPages(),
       };
     }
-    /* migrate legacy single-page storage */
     const legacy = localStorage.getItem(LEGACY_KEY);
     if (legacy) {
       const parsed = JSON.parse(legacy) as unknown;
@@ -181,9 +175,6 @@ function flipOnce(cell: Cell, next: string): Promise<void> {
   });
 }
 
-/**
- * Airport-style: each flap spins a random number of times, then lands on target.
- */
 async function rotateCellAirport(cell: Cell, targetRaw: string): Promise<void> {
   const target = normalizeChar(targetRaw);
   cell.target = target;
@@ -191,7 +182,6 @@ async function rotateCellAirport(cell: Cell, targetRaw: string): Promise<void> {
   cell.busy = true;
 
   const base = stepsBetween(cell.current, target);
-  /* 0–2 full charset spins + path to target; skip if already there (mostly) */
   let remaining =
     base === 0
       ? Math.random() < 0.12
@@ -233,7 +223,6 @@ function showPage(index: number, animate: boolean): void {
         paintCell(cell, ch);
         cell.target = ch;
       } else {
-        /* staggered random start — airport cascade */
         const startDelay = Math.floor(Math.random() * 520) + c * 18 + r * 28;
         window.setTimeout(() => {
           void rotateCellAirport(cell, ch);
@@ -325,25 +314,14 @@ function readEditorPageLines(): string[] {
   });
 }
 
-function openEditor(): void {
-  if (!dialog) return;
-  editPageIndex = Math.min(editPageIndex, state.pages.length - 1);
-  fillEditorFields();
-  void dialog.show();
-}
-
-function applyEditor(): void {
+function saveSettingsFromUi(animate: boolean): void {
   const interval = document.getElementById('split-interval') as FieldEl | null;
   state.intervalSec = clampInterval(Number(interval?.value ?? DEFAULT_INTERVAL_SEC));
-
-  /* save current edit page lines */
   state.pages[editPageIndex] = readEditorPageLines();
   persist();
-
   pageIndex = Math.min(pageIndex, state.pages.length - 1);
-  showPage(pageIndex, true);
+  showPage(pageIndex, animate);
   startRotation();
-  void dialog?.hide('user');
 }
 
 function addPage(): void {
@@ -351,13 +329,18 @@ function addPage(): void {
   state.pages.push(blankPage());
   editPageIndex = state.pages.length - 1;
   fillEditorFields();
+  persist();
 }
 
 function deletePage(): void {
   if (state.pages.length <= 1) return;
   state.pages.splice(editPageIndex, 1);
   editPageIndex = Math.min(editPageIndex, state.pages.length - 1);
+  pageIndex = Math.min(pageIndex, state.pages.length - 1);
   fillEditorFields();
+  persist();
+  showPage(pageIndex, true);
+  startRotation();
 }
 
 function selectEditPage(next: number): void {
@@ -365,9 +348,42 @@ function selectEditPage(next: number): void {
   state.pages[editPageIndex] = readEditorPageLines();
   editPageIndex = next;
   fillEditorFields();
+  persist();
 }
 
-/** Mount the Split board page + editor dialog. */
+function setLive(on: boolean): void {
+  live = on;
+  document.body.classList.toggle('split-live', on);
+  document.documentElement.classList.toggle('split-live', on);
+  pageRoot?.classList.toggle('is-live', on);
+  const liveBtn = document.getElementById('split-live');
+  const exitBtn = document.getElementById('split-live-exit');
+  if (liveBtn) {
+    liveBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    const label = liveBtn.querySelector('[data-live-label]');
+    if (label) label.textContent = t(on ? 'split.exitLive' : 'split.live');
+  }
+  if (exitBtn) exitBtn.hidden = !on;
+  if (on) {
+    void document.documentElement.requestFullscreen?.().catch(() => {
+      /* optional */
+    });
+  } else if (document.fullscreenElement) {
+    void document.exitFullscreen?.().catch(() => {
+      /* optional */
+    });
+  }
+}
+
+function onKeydown(event: KeyboardEvent): void {
+  if (!live) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    setLive(false);
+  }
+}
+
+/** Mount the Split board page with on-page settings + live mode. */
 export function mountSplitPage(page: HTMLElement): {
   show: () => void;
   hide: () => void;
@@ -375,74 +391,75 @@ export function mountSplitPage(page: HTMLElement): {
   state = loadState();
   pageIndex = 0;
   editPageIndex = 0;
+  pageRoot = page;
 
   page.innerHTML = `<div class="page-panel split-page">
-      <header class="page-header split-header">
+      <header class="page-header split-header split-chrome">
         <div class="split-header-text">
           <h1 class="page-title">${t('split.title')}</h1>
           <p class="page-tagline">${t('split.tagline')}</p>
         </div>
         <div class="split-header-actions">
           <span id="split-page-indicator" class="split-page-indicator"></span>
-          <k3-button id="split-edit" class="split-edit-btn" variant="filled" size="sm">
-            ${msIcon('edit')}<span>${t('split.edit')}</span>
+          <k3-button id="split-live" class="split-live-btn" variant="filled" size="sm" aria-pressed="false">
+            ${msIcon('live_tv')}<span data-live-label>${t('split.live')}</span>
           </k3-button>
         </div>
       </header>
-      <div class="split-stage">
-        <div id="split-grid" class="split-grid" role="grid" aria-label="${t('split.title')}"></div>
-        <k3-fab id="split-edit-fab" class="split-edit-fab" size="default" variant="primary" aria-label="${t('split.edit')}">
-          <span slot="icon" class="ms notranslate" translate="no" lang="zxx" data-k3-icon="edit" aria-hidden="true"></span>
-        </k3-fab>
-      </div>
-    </div>
-    <k3-dialog id="split-editor" class="split-editor" close-action>
-      <span slot="headline">${t('split.editorTitle')}</span>
-      <div class="split-editor-body k3-scroll">
-        <p class="split-editor-hint">${t('split.editorHint')}</p>
-        <k3-text-field
-          id="split-interval"
-          class="split-interval-field"
-          variant="outlined"
-          type="number"
-          min="${MIN_INTERVAL_SEC}"
-          max="${MAX_INTERVAL_SEC}"
-          label="${t('split.interval')}"
-          inputmode="numeric"
-        ></k3-text-field>
-        <div class="split-page-toolbar">
-          <k3-select id="split-page-select" class="split-page-select" variant="outlined" label="${t('split.page')}"></k3-select>
-          <k3-button id="split-page-add" variant="tonal" size="sm">${t('split.addPage')}</k3-button>
-          <k3-button id="split-page-delete" variant="text" size="sm">${t('split.deletePage')}</k3-button>
-        </div>
-        ${Array.from(
-          { length: SPLIT_ROWS },
-          (_, i) => `<k3-text-field
-            id="split-line-${i}"
-            class="split-line-field"
-            variant="outlined"
-            label="${t('split.line')} ${i + 1}"
-            maxlength="${SPLIT_COLS}"
-            autocomplete="off"
-          ></k3-text-field>`,
-        ).join('')}
-      </div>
-      <k3-button slot="actions" id="split-cancel" variant="text" size="sm">${t('split.cancel')}</k3-button>
-      <k3-button slot="actions" id="split-apply" variant="filled" size="sm">${t('split.apply')}</k3-button>
-    </k3-dialog>`;
 
-  dialog = document.getElementById('split-editor') as DialogEl;
+      <div class="split-body">
+        <aside class="split-settings split-chrome k3-scroll" aria-label="${t('split.editorTitle')}">
+          <p class="split-editor-hint">${t('split.editorHint')}</p>
+          <k3-text-field
+            id="split-interval"
+            class="split-interval-field"
+            variant="outlined"
+            type="number"
+            min="${MIN_INTERVAL_SEC}"
+            max="${MAX_INTERVAL_SEC}"
+            label="${t('split.interval')}"
+            inputmode="numeric"
+          ></k3-text-field>
+          <div class="split-page-toolbar">
+            <k3-select id="split-page-select" class="split-page-select" variant="outlined" label="${t('split.page')}"></k3-select>
+            <k3-button id="split-page-add" variant="tonal" size="sm">${t('split.addPage')}</k3-button>
+            <k3-button id="split-page-delete" variant="text" size="sm">${t('split.deletePage')}</k3-button>
+          </div>
+          <div class="split-lines">
+            ${Array.from(
+              { length: SPLIT_ROWS },
+              (_, i) => `<k3-text-field
+                id="split-line-${i}"
+                class="split-line-field"
+                variant="outlined"
+                label="${t('split.line')} ${i + 1}"
+                maxlength="${SPLIT_COLS}"
+                autocomplete="off"
+              ></k3-text-field>`,
+            ).join('')}
+          </div>
+          <div class="split-settings-actions">
+            <k3-button id="split-apply" variant="filled" size="sm">${t('split.apply')}</k3-button>
+          </div>
+        </aside>
+
+        <div class="split-stage">
+          <div id="split-grid" class="split-grid" role="grid" aria-label="${t('split.title')}"></div>
+        </div>
+      </div>
+
+      <k3-button id="split-live-exit" class="split-live-exit" variant="tonal" size="sm" hidden>
+        ${msIcon('close')}<span>${t('split.exitLive')}</span>
+      </k3-button>
+    </div>`;
+
   const grid = document.getElementById('split-grid');
   if (grid) buildGrid(grid);
+  fillEditorFields();
   showPage(0, false);
   sealLigatures(page);
 
-  document.getElementById('split-edit')?.addEventListener('k3-click', () => openEditor());
-  document.getElementById('split-edit-fab')?.addEventListener('k3-click', () => openEditor());
-  document.getElementById('split-cancel')?.addEventListener('k3-click', () => {
-    void dialog?.hide('user');
-  });
-  document.getElementById('split-apply')?.addEventListener('k3-click', () => applyEditor());
+  document.getElementById('split-apply')?.addEventListener('k3-click', () => saveSettingsFromUi(true));
   document.getElementById('split-page-add')?.addEventListener('k3-click', () => addPage());
   document.getElementById('split-page-delete')?.addEventListener('k3-click', () => deletePage());
   document.getElementById('split-page-select')?.addEventListener(
@@ -452,19 +469,35 @@ export function mountSplitPage(page: HTMLElement): {
       if (Number.isFinite(v)) selectEditPage(v);
     }) as EventListener,
   );
+  document.getElementById('split-interval')?.addEventListener('change', () => {
+    state.intervalSec = clampInterval(
+      Number((document.getElementById('split-interval') as FieldEl | null)?.value),
+    );
+    persist();
+    startRotation();
+  });
+  document.getElementById('split-live')?.addEventListener('k3-click', () => setLive(!live));
+  document.getElementById('split-live-exit')?.addEventListener('k3-click', () => setLive(false));
+  window.addEventListener('keydown', onKeydown);
+  document.addEventListener('fullscreenchange', () => {
+    if (live && !document.fullscreenElement) {
+      /* user exited OS fullscreen — keep live CSS unless they pressed Escape */
+    }
+  });
 
   return {
     show: () => {
       visible = true;
       page.hidden = false;
+      fillEditorFields();
       showPage(pageIndex, true);
       startRotation();
     },
     hide: () => {
       visible = false;
+      setLive(false);
       page.hidden = true;
       stopRotation();
-      void dialog?.hide('user');
     },
   };
 }
